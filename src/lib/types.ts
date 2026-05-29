@@ -86,4 +86,5 @@ export type LandingPage = {
   published: boolean;
   copy: LandingCopy;
   images: LandingImages;
+  theme?: string;
 };
