@@ -194,19 +194,19 @@
     background-image:
       radial-gradient(ellipse at 0% 0%, color-mix(in oklab, var(--gold-light) 48%, transparent) 0%, transparent 55%),
       radial-gradient(ellipse at 100% 100%, color-mix(in oklab, var(--primary) 38%, transparent) 0%, transparent 55%),
-      linear-gradient(135deg, var(--secondary) 0%, #5a2a35 60%, var(--dark) 100%);
+      linear-gradient(135deg, var(--secondary) 0%, color-mix(in oklab, var(--secondary) 65%, black) 60%, var(--dark) 100%);
   }
   .bg-gradient-dark {
     background-image:
       radial-gradient(ellipse at 30% 0%, color-mix(in oklab, var(--primary) 28%, transparent) 0%, transparent 55%),
       radial-gradient(ellipse at 100% 100%, color-mix(in oklab, var(--secondary) 55%, transparent) 0%, transparent 60%),
-      linear-gradient(180deg, var(--dark) 0%, #1a120e 100%);
+      linear-gradient(180deg, var(--dark) 0%, color-mix(in oklab, var(--dark) 82%, black) 100%);
   }
   .bg-gradient-footer {
     background-image:
       radial-gradient(ellipse at 28% 0%, color-mix(in oklab, var(--primary) 32%, transparent) 0%, transparent 55%),
       radial-gradient(ellipse at 98% 98%, color-mix(in oklab, var(--secondary) 50%, transparent) 0%, transparent 58%),
-      linear-gradient(180deg, #5a4234 0%, #4a3528 100%);
+      linear-gradient(180deg, color-mix(in oklab, var(--secondary) 45%, var(--dark)) 0%, color-mix(in oklab, var(--dark) 90%, black) 100%);
   }
   .bg-gradient-gold {
     background-image: linear-gradient(135deg, var(--primary) 0%, var(--gold-light) 50%, var(--primary-dark) 100%);

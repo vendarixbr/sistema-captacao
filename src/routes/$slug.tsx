@@ -36,7 +36,7 @@ function SlugPage() {
   const copy = mergeCopy(page.copy as Partial<LandingCopy>);
   const images = { ...DEFAULT_IMAGES, ...page.images };
 
-  return <LandingTemplate copy={copy} images={images} />;
+  return <LandingTemplate copy={copy} images={images} theme={page.theme} />;
 }
 
 function NotFound({ slug }: { slug: string }) {
