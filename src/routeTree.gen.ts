@@ -14,6 +14,7 @@ import { Route as SlugRouteImport } from './routes/$slug'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminNewRouteImport } from './routes/admin.new'
+import { Route as AdminBatchRouteImport } from './routes/admin.batch'
 import { Route as AdminIdRouteImport } from './routes/admin.$id'
 
 const AdminRoute = AdminRouteImport.update({
@@ -41,6 +42,11 @@ const AdminNewRoute = AdminNewRouteImport.update({
   path: '/new',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminBatchRoute = AdminBatchRouteImport.update({
+  id: '/batch',
+  path: '/batch',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminIdRoute = AdminIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/$slug': typeof SlugRoute
   '/admin': typeof AdminRouteWithChildren
   '/admin/$id': typeof AdminIdRoute
+  '/admin/batch': typeof AdminBatchRoute
   '/admin/new': typeof AdminNewRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
   '/admin/$id': typeof AdminIdRoute
+  '/admin/batch': typeof AdminBatchRoute
   '/admin/new': typeof AdminNewRoute
   '/admin': typeof AdminIndexRoute
 }
@@ -68,20 +76,29 @@ export interface FileRoutesById {
   '/$slug': typeof SlugRoute
   '/admin': typeof AdminRouteWithChildren
   '/admin/$id': typeof AdminIdRoute
+  '/admin/batch': typeof AdminBatchRoute
   '/admin/new': typeof AdminNewRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$slug' | '/admin' | '/admin/$id' | '/admin/new' | '/admin/'
+  fullPaths:
+    | '/'
+    | '/$slug'
+    | '/admin'
+    | '/admin/$id'
+    | '/admin/batch'
+    | '/admin/new'
+    | '/admin/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$slug' | '/admin/$id' | '/admin/new' | '/admin'
+  to: '/' | '/$slug' | '/admin/$id' | '/admin/batch' | '/admin/new' | '/admin'
   id:
     | '__root__'
     | '/'
     | '/$slug'
     | '/admin'
     | '/admin/$id'
+    | '/admin/batch'
     | '/admin/new'
     | '/admin/'
   fileRoutesById: FileRoutesById
@@ -129,6 +146,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminNewRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/batch': {
+      id: '/admin/batch'
+      path: '/batch'
+      fullPath: '/admin/batch'
+      preLoaderRoute: typeof AdminBatchRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/$id': {
       id: '/admin/$id'
       path: '/$id'
@@ -141,12 +165,14 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminIdRoute: typeof AdminIdRoute
+  AdminBatchRoute: typeof AdminBatchRoute
   AdminNewRoute: typeof AdminNewRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminIdRoute: AdminIdRoute,
+  AdminBatchRoute: AdminBatchRoute,
   AdminNewRoute: AdminNewRoute,
   AdminIndexRoute: AdminIndexRoute,
 }

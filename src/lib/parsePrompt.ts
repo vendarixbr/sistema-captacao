@@ -1,4 +1,5 @@
 import type { LandingCopy } from "./types";
+import { deriveContent } from "./deriveContent";
 
 export type ParseResult = {
   copy: Partial<LandingCopy>;
@@ -457,5 +458,6 @@ export function parsePrompt(text: string): ParseResult {
     } as LandingCopy["depoimentos"];
   }
 
-  return { copy, slug, detected: [...new Set(detected)] };
+  const enriched = deriveContent(copy);
+  return { copy: enriched, slug, detected: [...new Set(detected)] };
 }

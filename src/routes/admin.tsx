@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, Link, useRouterState } from "@tanstack/react-router";
-import { LayoutGrid, Plus, Sparkles } from "lucide-react";
+import { LayoutGrid, Plus, Sparkles, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin")({ component: AdminLayout });
@@ -8,6 +8,7 @@ function AdminLayout() {
   const { location } = useRouterState();
   const isNew = location.pathname === "/admin/new";
   const isList = location.pathname === "/admin/" || location.pathname === "/admin";
+  const isBatch = location.pathname === "/admin/batch";
 
   return (
     <div className="min-h-screen flex bg-[#F4F0EB]">
@@ -50,6 +51,18 @@ function AdminLayout() {
           >
             <Plus size={15} className={isNew ? "text-[#D4A96A]" : ""} />
             Nova Página
+          </Link>
+          <Link
+            to="/admin/batch"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-sans font-medium transition-all duration-200",
+              isBatch
+                ? "bg-white/12 text-white shadow-sm"
+                : "text-white/50 hover:bg-white/6 hover:text-white/80",
+            )}
+          >
+            <Layers size={15} className={isBatch ? "text-[#D4A96A]" : ""} />
+            Criação em Lote
           </Link>
         </nav>
 
