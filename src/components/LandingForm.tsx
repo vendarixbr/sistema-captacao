@@ -7,6 +7,7 @@ import { Plus, Trash2, Upload, X, Eye } from "lucide-react";
 import type { LandingPage, LandingCopy, LandingImages } from "@/lib/types";
 import { DEFAULT_COPY, DEFAULT_IMAGES, mergeCopy } from "@/lib/defaults";
 import { createLandingPage, updateLandingPage, uploadLandingImage } from "@/lib/supabase";
+import { parsePrompt, type ParseResult } from "@/lib/parsePrompt";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ export function LandingForm({ page, mode }: LandingFormProps) {
   const [copy, setCopy] = useState<DeepPartialCopy>(page?.copy ?? {});
   const [images, setImages] = useState<LandingImages>(page?.images ?? {});
   const [promptText, setPromptText] = useState("");
+  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [activeTab, setActiveTab] = useState<"form" | "prompt" | "preview">("form");
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
 
@@ -108,52 +110,34 @@ export function LandingForm({ page, mode }: LandingFormProps) {
     });
   }
 
-  // Parse prompt text (simple key: value format)
+  function handlePromptChange(text: string) {
+    setPromptText(text);
+    if (text.trim().length < 30) { setParseResult(null); return; }
+    const result = parsePrompt(text);
+    setParseResult(result);
+  }
+
   function applyPrompt() {
-    if (!promptText.trim()) return;
-    try {
-      // Try JSON first
-      const parsed = JSON.parse(promptText);
-      setCopy((prev) => ({ ...prev, ...parsed }));
-      toast.success("Prompt aplicado com sucesso.");
-    } catch {
-      // Try line-based parsing
-      const lines = promptText.split("\n");
-      const updates: Record<string, string> = {};
-      for (const line of lines) {
-        const colonIdx = line.indexOf(":");
-        if (colonIdx > -1) {
-          const key = line.slice(0, colonIdx).trim().toLowerCase().replace(/\s+/g, "_");
-          const val = line.slice(colonIdx + 1).trim();
-          if (key && val) updates[key] = val;
-        }
-      }
+    if (!parseResult) return;
+    const { copy: parsed, slug: parsedSlug } = parseResult;
 
-      // Map common keys to copy structure
-      const metaMap: Record<string, keyof LandingCopy["meta"]> = {
-        nome_da_doutora: "doctorName",
-        medica: "doctorName",
-        especialidade: "specialty",
-        crm: "crm",
-        whatsapp: "whatsapp",
-        instagram: "instagram",
-      };
+    setCopy((prev) => {
+      const next = { ...prev };
+      if (parsed.meta) next.meta = { ...(prev.meta as LandingCopy["meta"] ?? {}), ...parsed.meta } as LandingCopy["meta"];
+      if (parsed.hero) next.hero = { ...(prev.hero as LandingCopy["hero"] ?? {}), ...parsed.hero } as LandingCopy["hero"];
+      if (parsed.diferenciais) next.diferenciais = { ...(prev.diferenciais as LandingCopy["diferenciais"] ?? {}), ...parsed.diferenciais } as LandingCopy["diferenciais"];
+      if (parsed.sobre) next.sobre = { ...(prev.sobre as LandingCopy["sobre"] ?? {}), ...parsed.sobre } as LandingCopy["sobre"];
+      if (parsed.servicos) next.servicos = { ...(prev.servicos as LandingCopy["servicos"] ?? {}), ...parsed.servicos } as LandingCopy["servicos"];
+      if (parsed.depoimentos) next.depoimentos = { ...(prev.depoimentos as LandingCopy["depoimentos"] ?? {}), ...parsed.depoimentos } as LandingCopy["depoimentos"];
+      if (parsed.localizacao) next.localizacao = { ...(prev.localizacao as LandingCopy["localizacao"] ?? {}), ...parsed.localizacao } as LandingCopy["localizacao"];
+      if (parsed.contato) next.contato = { ...(prev.contato as LandingCopy["contato"] ?? {}), ...parsed.contato } as LandingCopy["contato"];
+      if (parsed.footer) next.footer = { ...(prev.footer as LandingCopy["footer"] ?? {}), ...parsed.footer } as LandingCopy["footer"];
+      return next;
+    });
 
-      const newMeta: Partial<LandingCopy["meta"]> = {};
-      for (const [key, val] of Object.entries(updates)) {
-        if (metaMap[key]) newMeta[metaMap[key]] = val;
-      }
-
-      if (Object.keys(newMeta).length > 0) {
-        setCopy((prev) => ({
-          ...prev,
-          meta: { ...prev.meta, ...newMeta } as LandingCopy["meta"],
-        }));
-        toast.success("Prompt aplicado. Revise os campos e complete os dados faltantes.");
-      } else {
-        toast.error("Formato não reconhecido. Use JSON ou o formato chave: valor.");
-      }
-    }
+    if (parsedSlug && !slug) setSlug(parsedSlug);
+    setActiveTab("form");
+    toast.success(`${parseResult.detected.length} campos preenchidos automaticamente.`);
   }
 
   // Image upload
@@ -270,27 +254,82 @@ export function LandingForm({ page, mode }: LandingFormProps) {
 
       {/* PROMPT TAB */}
       {activeTab === "prompt" && (
-        <div className="max-w-3xl space-y-4">
-          <div className="bg-muted/50 border border-border rounded-xl p-4 text-sm text-text-muted font-light leading-relaxed">
-            <p className="font-medium text-dark mb-2">Como usar o Prompt de Copy</p>
-            <p>
-              Cole aqui um JSON com os campos que deseja personalizar, ou use o formato{" "}
-              <code className="bg-white border border-border rounded px-1 py-0.5 text-xs font-mono">
-                chave: valor
-              </code>{" "}
-              linha por linha. Apenas os campos preenchidos serão sobrescritos — os demais herdam o
-              template padrão (Dra. Milena).
+        <div className="grid lg:grid-cols-2 gap-6 items-start">
+          {/* Textarea */}
+          <div className="space-y-3">
+            <p className="text-sm text-text-muted font-light">
+              Cole o prompt de copy completo. O sistema detecta e preenche os campos automaticamente em tempo real.
             </p>
+            <Textarea
+              value={promptText}
+              onChange={(e) => handlePromptChange(e.target.value)}
+              placeholder={"🔝 HEADER / NAVEGAÇÃO\nLogo: Dra. Lara Ganem — Ginecologia e Obstetrícia\nCRM MG 90916 · RQE 54639\n\n📌 SEÇÃO 1 — HERO\nTag/Label: Ginecologia Clínica & Pré-natal\nHeadline:\nCuidado especializado para cada fase da sua vida\n..."}
+              className="min-h-[500px] font-mono text-sm resize-none"
+            />
+            <Button
+              onClick={applyPrompt}
+              disabled={!parseResult || parseResult.detected.length === 0}
+              className="w-full bg-primary hover:bg-primary/90 text-white"
+            >
+              Aplicar {parseResult ? `${parseResult.detected.length} campos` : ""} ao formulário →
+            </Button>
           </div>
-          <Textarea
-            value={promptText}
-            onChange={(e) => setPromptText(e.target.value)}
-            placeholder={`Exemplo JSON:\n{\n  "meta": {\n    "doctorName": "Dra. Juliana Silva",\n    "specialty": "Dermatologia Estética",\n    "whatsapp": "5511999999999"\n  },\n  "hero": {\n    "headline": "Sua pele merece o melhor cuidado"\n  }\n}`}
-            className="min-h-[400px] font-mono text-sm"
-          />
-          <Button onClick={applyPrompt} className="bg-primary hover:bg-primary-dark text-white">
-            Aplicar Prompt
-          </Button>
+
+          {/* Live preview of detected fields */}
+          <div className="sticky top-6 space-y-4">
+            <div className="border border-border rounded-xl overflow-hidden">
+              <div className="bg-muted/60 px-4 py-3 border-b border-border flex items-center justify-between">
+                <span className="text-sm font-medium text-dark">Campos detectados</span>
+                {parseResult && (
+                  <span className="text-xs bg-primary text-white px-2 py-0.5 rounded-full font-medium">
+                    {parseResult.detected.length} encontrados
+                  </span>
+                )}
+              </div>
+
+              {!parseResult || parseResult.detected.length === 0 ? (
+                <div className="p-6 text-center text-text-muted text-sm font-light">
+                  Cole o prompt ao lado para ver os campos detectados aqui.
+                </div>
+              ) : (
+                <div className="p-4 space-y-4">
+                  {/* Slug sugerido */}
+                  {parseResult.slug && (
+                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                      <p className="text-xs font-medium text-primary mb-1">Slug sugerido</p>
+                      <p className="font-mono text-sm text-dark">/{parseResult.slug}</p>
+                    </div>
+                  )}
+
+                  {/* Lista de campos */}
+                  <ul className="space-y-1.5">
+                    {parseResult.detected.map((field) => (
+                      <li key={field} className="flex items-center gap-2 text-sm text-dark">
+                        <span className="text-green-500 shrink-0">✓</span>
+                        {field}
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* Dados chave extraídos */}
+                  {parseResult.copy.meta && (
+                    <div className="border-t border-border pt-3 space-y-1 text-xs text-text-muted font-light">
+                      {parseResult.copy.meta.doctorName && <p><span className="font-medium text-dark">Nome:</span> {parseResult.copy.meta.doctorName}</p>}
+                      {parseResult.copy.meta.specialty && <p><span className="font-medium text-dark">Especialidade:</span> {parseResult.copy.meta.specialty}</p>}
+                      {parseResult.copy.meta.crm && <p><span className="font-medium text-dark">CRM:</span> {parseResult.copy.meta.crm}</p>}
+                      {parseResult.copy.meta.whatsapp && <p><span className="font-medium text-dark">WhatsApp:</span> {parseResult.copy.meta.whatsapp}</p>}
+                    </div>
+                  )}
+                  {(parseResult.copy.servicos?.cards?.length ?? 0) > 0 && (
+                    <p className="text-xs text-text-muted"><span className="font-medium text-dark">{parseResult.copy.servicos!.cards!.length} serviços</span> detectados</p>
+                  )}
+                  {(parseResult.copy.depoimentos?.items?.length ?? 0) > 0 && (
+                    <p className="text-xs text-text-muted"><span className="font-medium text-dark">{parseResult.copy.depoimentos!.items!.length} depoimentos</span> detectados</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
