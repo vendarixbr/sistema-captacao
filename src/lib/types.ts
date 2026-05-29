@@ -7,6 +7,7 @@ export type LandingImages = {
 export type ServiceCard = { title: string; desc: string };
 export type DiferencialCard = { kpi: string; title: string; desc: string };
 export type Testimonial = { text: string; author: string; role: string };
+export type FaqItem = { question: string; answer: string };
 
 export type LandingCopy = {
   meta: {
@@ -48,6 +49,11 @@ export type LandingCopy = {
     items: Testimonial[];
     footer?: string;
   };
+  faq: {
+    label: string;
+    headline: string;
+    items: FaqItem[];
+  };
   localizacao: {
     label: string;
     headline: string;
@@ -64,6 +70,8 @@ export type LandingCopy = {
     headline: string;
     subtitle: string;
     cta: string;
+    formTitle: string;
+    formSubtitle: string;
   };
   footer: {
     tagline: string;
