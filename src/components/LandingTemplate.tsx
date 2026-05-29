@@ -1,10 +1,13 @@
 import { useState } from "react";
 import type { LandingCopy, LandingImages } from "@/lib/types";
 import { Instagram, MapPin, Phone, Clock, ArrowRight, Star, Navigation, ChevronDown, Menu, X } from "lucide-react";
+import { getTheme } from "@/lib/themes";
+import { DEFAULT_COPY } from "@/lib/defaults";
 
 interface LandingTemplateProps {
   copy: LandingCopy;
   images: LandingImages;
+  theme?: string;
 }
 
 function waUrl(number: string) {
@@ -20,11 +23,16 @@ function MapsUrl(address: string) {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
 }
 
-export function LandingTemplate({ copy, images }: LandingTemplateProps) {
+export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
   const wa = waUrl(copy.meta.whatsapp);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [form, setForm] = useState({ nome: "", telefone: "", email: "" });
+
+  const activeTheme = getTheme(theme);
+  const themeStyle = Object.keys(activeTheme.vars).length > 0
+    ? activeTheme.vars as React.CSSProperties
+    : undefined;
 
   const navLinks = [
     { label: "Home", href: "#hero" },
@@ -40,8 +48,18 @@ export function LandingTemplate({ copy, images }: LandingTemplateProps) {
     window.open(`${wa}?text=${encodeURIComponent(msg)}`, "_blank");
   }
 
+  const FALLBACK_TESTIMONIALS = DEFAULT_COPY.depoimentos.items;
+  const testimonialItems = copy.depoimentos.items.length >= 5
+    ? copy.depoimentos.items
+    : [
+        ...copy.depoimentos.items,
+        ...FALLBACK_TESTIMONIALS.filter(
+          (f) => !copy.depoimentos.items.some((i) => i.author === f.author)
+        ),
+      ].slice(0, 5);
+
   return (
-    <div className="min-h-screen bg-background font-sans">
+    <div className="min-h-screen bg-background font-sans" style={themeStyle}>
 
       {/* ── HEADER ── */}
       <header className="fixed top-0 inset-x-0 z-50 transition-all duration-500 bg-background/92 backdrop-blur-md shadow-[0_1px_0_rgba(184,134,90,0.12),0_4px_20px_rgba(0,0,0,0.06)]">
@@ -261,7 +279,7 @@ export function LandingTemplate({ copy, images }: LandingTemplateProps) {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
             {/* Left col */}
             <div className="flex flex-col gap-5">
-              {copy.depoimentos.items.slice(0, 2).map((item, i) => (
+              {testimonialItems.slice(0, 2).map((item, i) => (
                 <div key={i} className="bg-background/85 border border-primary/12 rounded-2xl p-6 shadow-soft">
                   <span className="font-serif text-3xl text-primary/25 leading-none block mb-3">"</span>
                   <p className="font-sans font-light text-text-muted text-sm leading-relaxed mb-5">{item.text}</p>
@@ -286,16 +304,16 @@ export function LandingTemplate({ copy, images }: LandingTemplateProps) {
               <h3 className="font-serif text-2xl text-dark mb-4 leading-snug">
                 {copy.diferenciais.cards[1]?.title ?? "Atendimento que acolhe"}
               </h3>
-              {copy.depoimentos.items[2] && (
+              {testimonialItems[2] && (
                 <>
-                  <p className="font-sans font-light text-text-muted text-sm leading-relaxed mb-6">{copy.depoimentos.items[2].text}</p>
+                  <p className="font-sans font-light text-text-muted text-sm leading-relaxed mb-6">{testimonialItems[2].text}</p>
                   <div className="flex items-center gap-3 mt-auto">
                     <div className="size-10 rounded-full bg-gradient-to-br from-accent to-bg-alt border border-primary/20 flex items-center justify-center">
-                      <span className="font-serif text-primary">{copy.depoimentos.items[2].author.charAt(0)}</span>
+                      <span className="font-serif text-primary">{testimonialItems[2].author.charAt(0)}</span>
                     </div>
                     <div className="text-left">
-                      <p className="font-sans text-sm font-medium text-dark">{copy.depoimentos.items[2].author}</p>
-                      <p className="font-sans text-[11px] text-text-muted font-light">{copy.depoimentos.items[2].role}</p>
+                      <p className="font-sans text-sm font-medium text-dark">{testimonialItems[2].author}</p>
+                      <p className="font-sans text-[11px] text-text-muted font-light">{testimonialItems[2].role}</p>
                     </div>
                   </div>
                 </>
@@ -304,7 +322,7 @@ export function LandingTemplate({ copy, images }: LandingTemplateProps) {
 
             {/* Right col */}
             <div className="flex flex-col gap-5">
-              {copy.depoimentos.items.slice(3, 5).map((item, i) => (
+              {testimonialItems.slice(3, 5).map((item, i) => (
                 <div key={i} className="bg-background/85 border border-primary/12 rounded-2xl p-6 shadow-soft">
                   <div className="flex gap-1 mb-3">
                     {[1,2,3,4,5].map(s => <Star key={s} className="size-3 text-primary fill-primary" />)}

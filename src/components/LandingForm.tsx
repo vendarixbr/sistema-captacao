@@ -8,6 +8,7 @@ import type { LandingPage, LandingCopy, LandingImages } from "@/lib/types";
 import { DEFAULT_COPY, DEFAULT_IMAGES, mergeCopy } from "@/lib/defaults";
 import { createLandingPage, updateLandingPage, uploadLandingImage } from "@/lib/supabase";
 import { parsePrompt, type ParseResult } from "@/lib/parsePrompt";
+import { THEMES, type ThemeId } from "@/lib/themes";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ export function LandingForm({ page, mode }: LandingFormProps) {
   const [published, setPublished] = useState(page?.published ?? false);
   const [copy, setCopy] = useState<DeepPartialCopy>(page?.copy ?? {});
   const [images, setImages] = useState<LandingImages>(page?.images ?? {});
+  const [theme, setTheme] = useState<ThemeId>((page?.theme as ThemeId) ?? "rose-gold");
   const [promptText, setPromptText] = useState("");
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [activeTab, setActiveTab] = useState<"form" | "prompt" | "preview">("form");
@@ -168,6 +170,7 @@ export function LandingForm({ page, mode }: LandingFormProps) {
         published,
         copy: copy as LandingCopy,
         images,
+        theme,
       };
 
       if (mode === "edit" && page) {
@@ -336,7 +339,7 @@ export function LandingForm({ page, mode }: LandingFormProps) {
       {/* PREVIEW TAB */}
       {activeTab === "preview" && (
         <div className="border border-border rounded-xl overflow-hidden shadow-soft">
-          <LandingTemplate copy={mergedCopy} images={mergedImages} />
+          <LandingTemplate copy={mergedCopy} images={mergedImages} theme={theme} />
         </div>
       )}
 
@@ -442,6 +445,39 @@ export function LandingForm({ page, mode }: LandingFormProps) {
                   {published ? "Publicada (visível ao público)" : "Rascunho (não visível)"}
                 </Label>
               </div>
+            </div>
+          </div>
+
+          {/* Theme picker */}
+          <div className="bg-white border border-border rounded-xl p-6 shadow-card">
+            <h2 className="font-display text-xl text-dark mb-2">Tema Visual</h2>
+            <p className="font-sans text-sm text-text-muted font-light mb-5">Escolha o conjunto de cores da landing page.</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {THEMES.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTheme(t.id as ThemeId)}
+                  className={`group relative rounded-xl border-2 overflow-hidden transition-all duration-200 ${theme === t.id ? "border-primary shadow-md" : "border-border hover:border-primary/40"}`}
+                >
+                  {/* Color preview */}
+                  <div className="h-14 relative" style={{ backgroundColor: t.preview.bg }}>
+                    <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${t.preview.primary}40 0%, ${t.preview.secondary}30 100%)` }} />
+                    <div className="absolute bottom-2 left-2 right-2 flex gap-1">
+                      <div className="h-1.5 flex-1 rounded-full" style={{ backgroundColor: t.preview.primary }} />
+                      <div className="h-1.5 w-4 rounded-full" style={{ backgroundColor: t.preview.secondary }} />
+                    </div>
+                  </div>
+                  <div className="px-2.5 py-2">
+                    <p className="font-sans text-[11px] font-medium text-dark text-left truncate">{t.name}</p>
+                  </div>
+                  {theme === t.id && (
+                    <div className="absolute top-1.5 right-1.5 size-4 rounded-full bg-primary flex items-center justify-center">
+                      <span className="text-white text-[9px]">✓</span>
+                    </div>
+                  )}
+                </button>
+              ))}
             </div>
           </div>
 
