@@ -1,12 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Upload, FileText, ImagePlus, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { FileText, ImagePlus, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import { parsePrompt } from "@/lib/parsePrompt";
 import { mergeCopy } from "@/lib/defaults";
 import { createLandingPage, uploadLandingImage } from "@/lib/supabase";
 import type { LandingCopy } from "@/lib/types";
+
+type CriticalField = { field: string; label: string };
+
+function getMissingCriticalFields(copy: Partial<LandingCopy>): CriticalField[] {
+  const missing: CriticalField[] = [];
+  if (!copy.meta?.doctorName) missing.push({ field: "doctorName", label: "Nome" });
+  if (!copy.meta?.whatsapp) missing.push({ field: "whatsapp", label: "WhatsApp" });
+  if (!copy.meta?.specialty) missing.push({ field: "specialty", label: "Especialidade" });
+  if (!copy.sobre?.text) missing.push({ field: "bio", label: "Bio (Sobre)" });
+  if (!copy.localizacao?.address) missing.push({ field: "address", label: "Endereço" });
+  if (!copy.localizacao?.city) missing.push({ field: "city", label: "Cidade" });
+  return missing;
+}
 
 export const Route = createFileRoute("/admin/batch")({ component: BatchPage });
 
@@ -14,6 +27,7 @@ type BatchEntry = {
   slug: string;
   copy: Partial<LandingCopy>;
   detected: string[];
+  missing: CriticalField[];
   images: Record<string, File>;
   status: "pending" | "creating" | "done" | "error";
   error?: string;
@@ -27,6 +41,7 @@ function parseBatchFile(text: string): BatchEntry[] {
       slug: result.slug || `pagina-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       copy: result.copy,
       detected: result.detected,
+      missing: getMissingCriticalFields(result.copy),
       images: {},
       status: "pending",
     };
@@ -94,7 +109,7 @@ export default function BatchPage() {
 
         // Upload images first
         for (const [section, file] of Object.entries(entry.images)) {
-          const url = await uploadLandingImage(entry.slug, section, file);
+          const url = await uploadLandingImage(entry.slug, section as "logo" | "hero" | "about", file);
           imageUrls[section] = url;
         }
 
@@ -230,6 +245,11 @@ export default function BatchPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
+                    {entry.missing.length > 0 && entry.status === "pending" && (
+                      <span className="flex items-center gap-1 font-sans text-[10px] text-amber-600 font-medium">
+                        <AlertTriangle className="size-3" />{entry.missing.length} aviso{entry.missing.length > 1 ? "s" : ""}
+                      </span>
+                    )}
                     <span className="font-sans text-[10px] text-text-muted">{entry.detected.length} campos</span>
                     {Object.keys(entry.images).length > 0 && (
                       <span className="font-sans text-[10px] text-primary">{Object.keys(entry.images).length} img</span>
@@ -238,7 +258,19 @@ export default function BatchPage() {
                   </div>
                 </button>
                 {expanded === i && (
-                  <div className="px-6 pb-5 bg-muted/30">
+                  <div className="px-6 pb-5 bg-muted/30 space-y-4">
+                    {entry.missing.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                        <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-amber-700 font-medium mb-2 flex items-center gap-1">
+                          <AlertTriangle className="size-3" /> Campos críticos não detectados — serão gerados automaticamente
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {entry.missing.map(m => (
+                            <span key={m.field} className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full">{m.label}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div>
                         <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-text-muted font-medium mb-2">Campos detectados</p>
@@ -251,7 +283,7 @@ export default function BatchPage() {
                       <div>
                         <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-text-muted font-medium mb-2">Imagens</p>
                         {Object.keys(entry.images).length ? (
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap">
                             {Object.entries(entry.images).map(([sec, file]) => (
                               <span key={sec} className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
                                 {sec}: {file.name.slice(-12)}
@@ -264,7 +296,7 @@ export default function BatchPage() {
                       </div>
                     </div>
                     {entry.error && (
-                      <p className="mt-3 text-xs text-destructive font-medium">Erro: {entry.error}</p>
+                      <p className="mt-1 text-xs text-destructive font-medium">Erro: {entry.error}</p>
                     )}
                   </div>
                 )}

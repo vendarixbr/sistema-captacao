@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { getLandingPageBySlug } from "@/lib/supabase";
 import { LandingTemplate } from "@/components/LandingTemplate";
 import { mergeCopy, DEFAULT_IMAGES } from "@/lib/defaults";
@@ -9,6 +10,17 @@ export const Route = createFileRoute("/$slug")({
   component: SlugPage,
 });
 
+function setPageMeta(title: string, description: string) {
+  document.title = title;
+  let desc = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+  if (!desc) {
+    desc = document.createElement("meta");
+    desc.name = "description";
+    document.head.appendChild(desc);
+  }
+  desc.content = description;
+}
+
 function SlugPage() {
   const { slug } = Route.useParams();
 
@@ -17,6 +29,20 @@ function SlugPage() {
     queryFn: () => getLandingPageBySlug(slug),
     retry: false,
   });
+
+  useEffect(() => {
+    if (!page) return;
+    const copy = mergeCopy(page.copy as Partial<LandingCopy>);
+    const name = copy.meta.doctorName;
+    const specialty = copy.meta.specialty;
+    const title = specialty ? `${name} — ${specialty}` : name;
+    const description = copy.hero.subtitle || `Agende sua consulta com ${name}. ${specialty}.`;
+    setPageMeta(title, description);
+
+    return () => {
+      document.title = "Landing Generator · beinflux";
+    };
+  }, [page]);
 
   if (isLoading) {
     return (

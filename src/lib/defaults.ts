@@ -97,19 +97,31 @@ export const DEFAULT_IMAGES: LandingImages = {
   about: null,
 };
 
+function mergeSection<T extends Record<string, unknown>>(defaults: T, partial?: Partial<T>): T {
+  if (!partial) return defaults;
+  const merged = { ...defaults } as T;
+  for (const key in partial) {
+    const val = partial[key];
+    // Never overwrite a default array with undefined/empty — preserves specialty cards
+    if (Array.isArray(defaults[key]) && (val === undefined || (Array.isArray(val) && (val as unknown[]).length === 0))) continue;
+    if (val !== undefined) (merged as Record<string, unknown>)[key] = val;
+  }
+  return merged;
+}
+
 export function mergeCopy(partial: Partial<LandingCopy>): LandingCopy {
   return {
     ...DEFAULT_COPY,
     ...partial,
-    meta: { ...DEFAULT_COPY.meta, ...partial.meta },
-    hero: { ...DEFAULT_COPY.hero, ...partial.hero },
-    diferenciais: { ...DEFAULT_COPY.diferenciais, ...partial.diferenciais },
-    sobre: { ...DEFAULT_COPY.sobre, ...partial.sobre },
-    servicos: { ...DEFAULT_COPY.servicos, ...partial.servicos },
-    depoimentos: { ...DEFAULT_COPY.depoimentos, ...partial.depoimentos },
-    faq: { ...DEFAULT_COPY.faq, ...partial.faq },
-    localizacao: { ...DEFAULT_COPY.localizacao, ...partial.localizacao },
-    contato: { ...DEFAULT_COPY.contato, ...partial.contato },
-    footer: { ...DEFAULT_COPY.footer, ...partial.footer },
+    meta: mergeSection(DEFAULT_COPY.meta, partial.meta),
+    hero: mergeSection(DEFAULT_COPY.hero, partial.hero),
+    diferenciais: mergeSection(DEFAULT_COPY.diferenciais, partial.diferenciais),
+    sobre: mergeSection(DEFAULT_COPY.sobre, partial.sobre),
+    servicos: mergeSection(DEFAULT_COPY.servicos, partial.servicos),
+    depoimentos: mergeSection(DEFAULT_COPY.depoimentos, partial.depoimentos),
+    faq: mergeSection(DEFAULT_COPY.faq, partial.faq),
+    localizacao: mergeSection(DEFAULT_COPY.localizacao, partial.localizacao),
+    contato: mergeSection(DEFAULT_COPY.contato, partial.contato),
+    footer: mergeSection(DEFAULT_COPY.footer, partial.footer),
   };
 }

@@ -73,11 +73,11 @@ export function LandingForm({ page, mode }: LandingFormProps) {
       arr[index] = { ...arr[index], [field]: value };
 
       if (section === "diferenciais") {
-        return { ...prev, diferenciais: { ...(prev.diferenciais ?? {}), cards: arr } };
+        return { ...prev, diferenciais: { ...(prev.diferenciais ?? {}), cards: arr } } as DeepPartialCopy;
       } else if (section === "servicos") {
-        return { ...prev, servicos: { ...(prev.servicos ?? {}), cards: arr } };
+        return { ...prev, servicos: { ...(prev.servicos ?? {}), cards: arr } } as DeepPartialCopy;
       } else {
-        return { ...prev, depoimentos: { ...(prev.depoimentos ?? {}), items: arr } };
+        return { ...prev, depoimentos: { ...(prev.depoimentos ?? {}), items: arr } } as DeepPartialCopy;
       }
     });
   }
@@ -86,13 +86,13 @@ export function LandingForm({ page, mode }: LandingFormProps) {
     setCopy((prev) => {
       if (section === "diferenciais") {
         const cards = [...(prev.diferenciais?.cards ?? DEFAULT_COPY.diferenciais.cards), { kpi: "", title: "", desc: "" }];
-        return { ...prev, diferenciais: { ...(prev.diferenciais ?? {}), cards } };
+        return { ...prev, diferenciais: { ...(prev.diferenciais ?? {}), cards } } as DeepPartialCopy;
       } else if (section === "servicos") {
         const cards = [...(prev.servicos?.cards ?? DEFAULT_COPY.servicos.cards), { title: "", desc: "" }];
-        return { ...prev, servicos: { ...(prev.servicos ?? {}), cards } };
+        return { ...prev, servicos: { ...(prev.servicos ?? {}), cards } } as DeepPartialCopy;
       } else {
         const items = [...(prev.depoimentos?.items ?? DEFAULT_COPY.depoimentos.items), { text: "", author: "", role: "" }];
-        return { ...prev, depoimentos: { ...(prev.depoimentos ?? {}), items } };
+        return { ...prev, depoimentos: { ...(prev.depoimentos ?? {}), items } } as DeepPartialCopy;
       }
     });
   }
@@ -101,13 +101,13 @@ export function LandingForm({ page, mode }: LandingFormProps) {
     setCopy((prev) => {
       if (section === "diferenciais") {
         const cards = (prev.diferenciais?.cards ?? DEFAULT_COPY.diferenciais.cards).filter((_, i) => i !== index);
-        return { ...prev, diferenciais: { ...(prev.diferenciais ?? {}), cards } };
+        return { ...prev, diferenciais: { ...(prev.diferenciais ?? {}), cards } } as DeepPartialCopy;
       } else if (section === "servicos") {
         const cards = (prev.servicos?.cards ?? DEFAULT_COPY.servicos.cards).filter((_, i) => i !== index);
-        return { ...prev, servicos: { ...(prev.servicos ?? {}), cards } };
+        return { ...prev, servicos: { ...(prev.servicos ?? {}), cards } } as DeepPartialCopy;
       } else {
         const items = (prev.depoimentos?.items ?? DEFAULT_COPY.depoimentos.items).filter((_, i) => i !== index);
-        return { ...prev, depoimentos: { ...(prev.depoimentos ?? {}), items } };
+        return { ...prev, depoimentos: { ...(prev.depoimentos ?? {}), items } } as DeepPartialCopy;
       }
     });
   }

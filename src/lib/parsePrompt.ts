@@ -214,7 +214,8 @@ export function parsePrompt(text: string): ParseResult {
       if (matchesAny(stripped, "Botão", "Botões:", "CTA:")) {
         heroCtaMode = true; heroCtas = []; continue;
       }
-      if (heroCtaMode && stripped && !stripped.includes(":") && !matchesAny(stripped, "Agendar", "Conhecer", "Saiba", "Ver")) {
+      // Exit CTA mode if we hit a new key/section marker
+      if (heroCtaMode && (stripped.includes(":") || matchesAny(stripped, "Headline", "Subtítulo", "Subtitulo", "SEÇÃO", "HERO"))) {
         heroCtaMode = false;
       }
       if (heroCtaMode && stripped) {
