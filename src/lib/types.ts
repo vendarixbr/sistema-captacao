@@ -87,4 +87,5 @@ export type LandingPage = {
   copy: LandingCopy;
   images: LandingImages;
   theme?: string;
+  pagemode?: "landing" | "multipage";
 };

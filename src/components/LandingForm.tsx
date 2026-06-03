@@ -34,6 +34,7 @@ export function LandingForm({ page, mode }: LandingFormProps) {
   const [copy, setCopy] = useState<DeepPartialCopy>(page?.copy ?? {});
   const [images, setImages] = useState<LandingImages>(page?.images ?? {});
   const [theme, setTheme] = useState<ThemeId>((page?.theme as ThemeId) ?? "rose-gold");
+  const [pagemode, setPagemode] = useState<"landing" | "multipage">(page?.pagemode ?? "landing");
   const [promptText, setPromptText] = useState("");
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [activeTab, setActiveTab] = useState<"form" | "prompt" | "preview">("form");
@@ -171,6 +172,7 @@ export function LandingForm({ page, mode }: LandingFormProps) {
         copy: copy as LandingCopy,
         images,
         theme,
+        pagemode,
       };
 
       if (mode === "edit" && page) {
@@ -339,7 +341,7 @@ export function LandingForm({ page, mode }: LandingFormProps) {
       {/* PREVIEW TAB */}
       {activeTab === "preview" && (
         <div className="border border-border rounded-xl overflow-hidden shadow-soft">
-          <LandingTemplate copy={mergedCopy} images={mergedImages} theme={theme} />
+          <LandingTemplate copy={mergedCopy} images={mergedImages} theme={theme} pagemode={pagemode} />
         </div>
       )}
 
@@ -473,6 +475,36 @@ export function LandingForm({ page, mode }: LandingFormProps) {
                   </div>
                   {theme === t.id && (
                     <div className="absolute top-1.5 right-1.5 size-4 rounded-full bg-primary flex items-center justify-center">
+                      <span className="text-white text-[9px]">✓</span>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Page mode */}
+          <div className="bg-white border border-border rounded-xl p-6 shadow-card">
+            <h2 className="font-display text-xl text-dark mb-2">Modo de Exibição</h2>
+            <p className="font-sans text-sm text-text-muted font-light mb-5">
+              Landing page exibe todas as seções em scroll contínuo. Multipage exibe abas no topo para navegar entre seções.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {(["landing", "multipage"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setPagemode(mode)}
+                  className={`relative rounded-xl border-2 p-4 text-left transition-all duration-200 ${pagemode === mode ? "border-primary bg-primary/5 shadow-md" : "border-border hover:border-primary/40"}`}
+                >
+                  <p className="font-sans text-sm font-medium text-dark">
+                    {mode === "landing" ? "Landing Page" : "Multipage"}
+                  </p>
+                  <p className="font-sans text-[12px] text-text-muted font-light mt-1">
+                    {mode === "landing" ? "Scroll contínuo — todas as seções em uma página" : "Abas no topo — cliente navega entre seções"}
+                  </p>
+                  {pagemode === mode && (
+                    <div className="absolute top-2.5 right-2.5 size-4 rounded-full bg-primary flex items-center justify-center">
                       <span className="text-white text-[9px]">✓</span>
                     </div>
                   )}

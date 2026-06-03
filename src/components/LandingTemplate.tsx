@@ -84,18 +84,24 @@ function Avatar({ name, size = 12 }: { name: string; size?: number }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+type TabId = "home" | "sobre" | "servicos" | "depoimentos" | "localizacao" | "contato";
+
 interface LandingTemplateProps {
   copy: LandingCopy;
   images: LandingImages;
   theme?: string;
+  pagemode?: "landing" | "multipage";
 }
 
-export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
+export function LandingTemplate({ copy, images, theme, pagemode = "landing" }: LandingTemplateProps) {
   const wa = waUrl(copy.meta.whatsapp);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [form, setForm] = useState({ nome: "", telefone: "", email: "" });
   const [formStatus, setFormStatus] = useState<"idle" | "loading" | "done">("idle");
+  const [activeTab, setActiveTab] = useState<TabId>("home");
+
+  const isMultipage = pagemode === "multipage";
 
   const activeTheme = getTheme(theme);
   const themeStyle = Object.keys(activeTheme.vars).length > 0
@@ -108,13 +114,24 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
     ? copy.depoimentos.items
     : [...copy.depoimentos.items, ...FALLBACK.filter(f => !copy.depoimentos.items.some(i => i.author === f.author))].slice(0, 5);
 
-  const navLinks = [
-    { label: "Home", href: "#hero" },
-    { label: "Sobre", href: "#sobre" },
-    { label: "Serviços", href: "#servicos" },
-    { label: "Depoimentos", href: "#depoimentos" },
-    { label: "Contato", href: "#contato" },
+  const tabs: { id: TabId; label: string }[] = [
+    { id: "home", label: "Home" },
+    { id: "sobre", label: "Sobre" },
+    { id: "servicos", label: "Serviços" },
+    { id: "depoimentos", label: "Depoimentos" },
+    { id: "localizacao", label: "Localização" },
+    { id: "contato", label: "Contato" },
   ];
+
+  const navLinks = isMultipage
+    ? tabs.map(t => ({ label: t.label, href: "#", onClick: () => setActiveTab(t.id) }))
+    : [
+        { label: "Home", href: "#hero", onClick: undefined },
+        { label: "Sobre", href: "#sobre", onClick: undefined },
+        { label: "Serviços", href: "#servicos", onClick: undefined },
+        { label: "Depoimentos", href: "#depoimentos", onClick: undefined },
+        { label: "Contato", href: "#contato", onClick: undefined },
+      ];
 
   function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -146,7 +163,9 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
 
           <nav className="hidden lg:flex items-center gap-10">
             {navLinks.map((l) => (
-              <a key={l.href} href={l.href} className="nav-link font-sans text-[12px] tracking-[0.25em] uppercase font-light text-dark hover:text-primary transition-colors">
+              <a key={l.label} href={l.href}
+                onClick={l.onClick ? (e) => { e.preventDefault(); l.onClick!(); } : undefined}
+                className={`nav-link font-sans text-[12px] tracking-[0.25em] uppercase font-light transition-colors ${isMultipage && tabs.find(t => t.label === l.label)?.id === activeTab ? "text-primary border-b border-primary pb-0.5" : "text-dark hover:text-primary"}`}>
                 {l.label}
               </a>
             ))}
@@ -181,7 +200,8 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
               <div className="h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent shrink-0" />
               <nav className="flex-1 flex flex-col px-8 py-6 gap-1 overflow-y-auto">
                 {navLinks.map((l, i) => (
-                  <a key={l.href} href={l.href} onClick={() => setMenuOpen(false)}
+                  <a key={l.label} href={l.href}
+                    onClick={(e) => { if (l.onClick) { e.preventDefault(); l.onClick(); } setMenuOpen(false); }}
                     className="group font-serif text-[26px] leading-none text-dark hover:text-primary transition-colors py-4 border-b border-primary/10 flex items-center justify-between">
                     <span>{l.label}</span>
                     <span className="font-sans text-[10px] tracking-[0.25em] text-primary/40">0{i + 1}</span>
@@ -198,6 +218,32 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
           </div>
         )}
       </header>
+
+      {/* ── TAB BAR (multipage only) ───────────────────────────────────────── */}
+      {isMultipage && (
+        <div className="sticky top-20 sm:top-24 z-40 bg-background/96 backdrop-blur-md border-b border-primary/15 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
+            <div className="flex items-center gap-0 overflow-x-auto scrollbar-hide">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => { setActiveTab(tab.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                  className={`shrink-0 px-4 sm:px-6 py-3.5 font-sans text-[11px] tracking-[0.22em] uppercase transition-all duration-200 border-b-2 ${
+                    activeTab === tab.id
+                      ? "border-primary text-primary font-medium"
+                      : "border-transparent text-text-muted hover:text-dark hover:border-primary/30"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── HOME TAB: HERO + DIFERENCIAIS ─────────────────────────────────── */}
+      {(!isMultipage || activeTab === "home") && <>
 
       {/* ── HERO ───────────────────────────────────────────────────────────── */}
       <section id="hero" className="relative min-h-[88vh] lg:min-h-screen pt-24 sm:pt-28 lg:pt-0 lg:flex items-center overflow-hidden bg-gradient-warm">
@@ -311,8 +357,10 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
         </div>
       </section>
 
+      </>}{/* end home tab */}
+
       {/* ── SOBRE ──────────────────────────────────────────────────────────── */}
-      <section id="sobre" className="py-16 sm:py-20 lg:py-28">
+      {(!isMultipage || activeTab === "sobre") && <section id="sobre" className="py-16 sm:py-20 lg:py-28">
         <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-10 grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           <Reveal>
             <div className="relative max-w-md mx-auto lg:max-w-none w-full">
@@ -345,8 +393,10 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
         </div>
       </section>
 
+      }{/* end sobre tab */}
+
       {/* ── SERVIÇOS ───────────────────────────────────────────────────────── */}
-      <section id="servicos" className="py-16 sm:py-20 lg:py-28 bg-gradient-cream relative overflow-hidden">
+      {(!isMultipage || activeTab === "servicos") && <section id="servicos" className="py-16 sm:py-20 lg:py-28 bg-gradient-cream relative overflow-hidden">
         <div className="absolute inset-0 noise opacity-50 pointer-events-none" />
         <div className="absolute top-20 right-10 w-72 h-72 rounded-full bg-accent/30 blur-3xl pointer-events-none" />
         <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-10 relative">
@@ -386,8 +436,10 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
         </div>
       </section>
 
-      {/* ── DEPOIMENTOS ────────────────────────────────────────────────────── */}
-      <section id="depoimentos" className="py-16 sm:py-20 lg:py-28 bg-gradient-cream relative overflow-hidden">
+      }{/* end servicos tab */}
+
+      {/* ── DEPOIMENTOS + FAQ (aba depoimentos) ───────────────────────────── */}
+      {(!isMultipage || activeTab === "depoimentos") && <><section id="depoimentos" className="py-16 sm:py-20 lg:py-28 bg-gradient-cream relative overflow-hidden">
         <div className="absolute inset-0 noise opacity-50 pointer-events-none" />
         <div className="absolute -top-20 -left-20 w-96 h-96 rounded-full bg-accent/40 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-20 -right-20 w-96 h-96 rounded-full bg-gold-light/20 blur-3xl pointer-events-none" />
@@ -510,7 +562,7 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
         </div>
       </section>
 
-      {/* ── FAQ ────────────────────────────────────────────────────────────── */}
+      {/* ── FAQ (aparece na aba depoimentos no multipage) ─────────────────── */}
       {copy.faq.items.length > 0 && (
         <section className="py-16 sm:py-20 lg:py-28 bg-background">
           <div className="max-w-4xl mx-auto px-5 sm:px-6 lg:px-10">
@@ -544,8 +596,10 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
         </section>
       )}
 
+      </>}{/* end depoimentos tab */}
+
       {/* ── LOCALIZAÇÃO ────────────────────────────────────────────────────── */}
-      <section className="py-16 sm:py-20 lg:py-28 bg-bg-alt/30">
+      {(!isMultipage || activeTab === "localizacao") && <section className="py-16 sm:py-20 lg:py-28 bg-bg-alt/30">
         <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-10">
           <Reveal>
             <div className="text-center max-w-2xl mx-auto mb-12 sm:mb-16">
@@ -618,8 +672,10 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
         </div>
       </section>
 
+      }{/* end localizacao tab */}
+
       {/* ── CONTATO / CTA ──────────────────────────────────────────────────── */}
-      <section id="contato" className="relative py-16 sm:py-20 lg:py-28 overflow-hidden bg-gradient-dark">
+      {(!isMultipage || activeTab === "contato") && <section id="contato" className="relative py-16 sm:py-20 lg:py-28 overflow-hidden bg-gradient-dark">
         <div className="absolute inset-0 noise-dark opacity-70" />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[60%] h-1 bg-gradient-to-r from-transparent via-gold-light/60 to-transparent" />
         <div className="absolute -top-32 -left-20 w-[28rem] h-[28rem] rounded-full bg-primary/20 blur-3xl pointer-events-none" />
@@ -686,6 +742,8 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
         </div>
       </section>
 
+      }{/* end contato tab */}
+
       {/* ── FOOTER ─────────────────────────────────────────────────────────── */}
       <footer className="bg-gradient-footer text-white relative overflow-hidden">
         <div className="absolute inset-0 noise-dark opacity-60 pointer-events-none" />
@@ -706,7 +764,13 @@ export function LandingTemplate({ copy, images, theme }: LandingTemplateProps) {
             <h4 className="font-sans text-[11px] tracking-[0.3em] uppercase text-primary font-medium mb-5">Navegação</h4>
             <ul className="space-y-3 font-sans text-sm text-white/70 font-light">
               {navLinks.map(l => (
-                <li key={l.href}><a href={l.href} className="hover:text-primary transition-colors">{l.label}</a></li>
+                <li key={l.label}>
+                  <a href={l.href}
+                    onClick={l.onClick ? (e) => { e.preventDefault(); l.onClick!(); window.scrollTo({ top: 0, behavior: "smooth" }); } : undefined}
+                    className="hover:text-primary transition-colors cursor-pointer">
+                    {l.label}
+                  </a>
+                </li>
               ))}
             </ul>
           </div>
