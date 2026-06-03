@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   FileText, ImagePlus, CheckCircle2, XCircle, Loader2,
   ChevronDown, ChevronUp, AlertTriangle, Plus, Trash2, X,
-  ChevronLeft,
+  ChevronLeft, Sparkles,
 } from "lucide-react";
 import { parsePrompt } from "@/lib/parsePrompt";
 import { mergeCopy } from "@/lib/defaults";
@@ -47,7 +47,102 @@ type FormProf = {
   images: { logo?: File; hero?: File; about?: File };
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Smart extractor ───────────────────────────────────────────────────────────
+
+const SPECIALTY_MAP: [RegExp, string][] = [
+  [/ginecolog/i, "Ginecologia"],
+  [/obstetri|pr[eé].?natal/i, "Obstetrícia"],
+  [/dermatolog/i, "Dermatologia"],
+  [/ortoped/i, "Ortopedia"],
+  [/cardiol/i, "Cardiologia"],
+  [/pediatr/i, "Pediatria"],
+  [/odontolog|dentist|dental|odonto\b/i, "Odontologia"],
+  [/fisioter/i, "Fisioterapia"],
+  [/psicolog|psicoter/i, "Psicologia"],
+  [/nutri/i, "Nutrição"],
+  [/oftalmo/i, "Oftalmologia"],
+  [/endocrin/i, "Endocrinologia"],
+  [/neurolog/i, "Neurologia"],
+  [/harmoniz|orofacial|buco/i, "Harmonização Orofacial"],
+  [/cirurgi.*pl[aá]stic|pl[aá]stic.*cirurgi/i, "Cirurgia Plástica"],
+  [/est[eé]tic|medicina est[eé]tic/i, "Estética"],
+  [/reumatolog/i, "Reumatologia"],
+  [/geriatr/i, "Geriatria"],
+  [/cl[ií]nica m[eé]dic|cl[ií]nico geral|medicina interna/i, "Clínica Médica"],
+];
+
+function detectSpecialty(text: string): string {
+  for (const [re, name] of SPECIALTY_MAP) {
+    if (re.test(text)) return name;
+  }
+  return "";
+}
+
+function smartExtract(rawText: string): FormProf[] {
+  // Split blocks by === OR by detecting a new doctor name after some content
+  const rawBlocks = rawText.split(/^===\s*$/m).map(b => b.trim()).filter(Boolean);
+
+  return rawBlocks.map(block => {
+    const prof = emptyProf();
+    const full = block;
+
+    // ── Name: Dra. / Dr. prefix ──────────────────────────────────────────────
+    const nameMatch = full.match(/\b(Dra?\.\s+[\wÀ-ÿ][\wÀ-ÿ\s]{2,40}?)(?=\s*(?:,|$|\n|Rua|Av\.|CRM|@|\d{8,}))/i);
+    if (nameMatch) {
+      prof.nome = nameMatch[1].trim().replace(/[,;.]+$/, "");
+    } else {
+      // Try without prefix — first capitalized sequence on first line
+      const firstLine = full.split("\n")[0];
+      const capMatch = firstLine.match(/^([A-ZÀÁÂÃÉÊÍÓÔÕÚÜÇ][a-záàâãéêíóôõúüçñ]+(?:\s+[A-ZÀÁÂÃÉÊÍÓÔÕÚÜÇ][a-záàâãéêíóôõúüçñ]+){1,3})/);
+      if (capMatch && !capMatch[1].match(/^(?:Rua|Av\.|Avenida)/i)) {
+        prof.nome = capMatch[1].trim();
+      }
+    }
+
+    // ── WhatsApp / phone ─────────────────────────────────────────────────────
+    const phones = [...full.matchAll(/(?<!\d)(\(?\d{2}\)?\s?[\d\s.-]{8,13})(?!\d)/g)];
+    for (const m of phones) {
+      const digits = m[1].replace(/\D/g, "");
+      if (digits.length >= 10 && digits.length <= 13) {
+        prof.whatsapp = digits;
+        break;
+      }
+    }
+    if (!prof.whatsapp) {
+      // bare number like 43998392579
+      const bare = full.match(/(?<!\d)(\d{10,11})(?!\d)/);
+      if (bare) prof.whatsapp = bare[1];
+    }
+
+    // ── Instagram ────────────────────────────────────────────────────────────
+    const igMatch = full.match(/(?:instagram\.com\/|@)([\w.]+)/i);
+    if (igMatch) prof.instagram = "@" + igMatch[1].replace(/\/+$/, "");
+
+    // ── CRM / professional council ───────────────────────────────────────────
+    const crmMatch = full.match(/\b(CRM|CRO|CRP|CREFITO|CFM)\s+[A-Z]{0,2}\s*\d[\d\s./-]*(?:·\s*RQE\s*[\d]+)?/i);
+    if (crmMatch) prof.crm = crmMatch[0].trim();
+
+    // ── Address ──────────────────────────────────────────────────────────────
+    const addrMatch = full.match(/(?:Rua|R\.|Av\.|Avenida|Al\.|Alameda|Pça\.|Praça|Estrada)\s+[\wÀ-ÿ\s,]+\d+[\wÀ-ÿ\s,—–-]*/i);
+    if (addrMatch) prof.endereco = addrMatch[0].trim().replace(/[,\s]+$/, "");
+
+    // ── City ─────────────────────────────────────────────────────────────────
+    const cityMatch = full.match(/[\wÀ-ÿ\s]+-\s*[A-Z]{2}(?:,\s*\d{5}-?\d{3})?/);
+    if (cityMatch && cityMatch[0].trim() !== prof.endereco) {
+      prof.cidade = cityMatch[0].trim();
+    }
+
+    // ── Specialty ────────────────────────────────────────────────────────────
+    prof.especialidade = detectSpecialty(full);
+
+    // ── Site / URL (best-effort as reference) ────────────────────────────────
+    // (just ignore — not mapped to FormProf)
+
+    return prof;
+  });
+}
+
+// ── Other helpers ─────────────────────────────────────────────────────────────
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
@@ -61,93 +156,6 @@ function emptyProf(): FormProf {
     depoimentos: [],
     images: {},
   };
-}
-
-// Parse raw pasted text with =chave= markers into FormProf[]
-function parseRawInput(text: string): FormProf[] {
-  const blocks = text.split(/^===\s*$/m).map(b => b.trim()).filter(Boolean);
-
-  return blocks.map(block => {
-    const prof = emptyProf();
-    const pattern = /=([a-z0-9]+)=[ \t]*/gi;
-    const matches = [...block.matchAll(pattern)];
-
-    const sections = matches.map((m, i) => ({
-      key: m[1].toLowerCase(),
-      value: block.slice(
-        (m.index ?? 0) + m[0].length,
-        i + 1 < matches.length ? matches[i + 1].index : undefined,
-      ).trim(),
-    }));
-
-    for (const { key, value } of sections) {
-      switch (key) {
-        case "nome": case "name":
-          prof.nome = value; break;
-        case "especialidade": case "esp": case "area": case "especialidadeprincipal":
-          prof.especialidade = value; break;
-        case "especialidade2": case "esp2": case "secundaria":
-          prof.especialidade2 = value; break;
-        case "whatsapp": case "tel": case "telefone": case "fone": case "zap":
-          prof.whatsapp = value; break;
-        case "instagram": case "ig": case "insta":
-          prof.instagram = value ? (value.startsWith("@") ? value : "@" + value) : ""; break;
-        case "crm": case "cro": case "crp": case "crefito": case "registro": case "conselho":
-          prof.crm = value; break;
-        case "headline":
-          prof.headline = value; break;
-        case "subtitulo": case "subtitle":
-          prof.subtitulo = value; break;
-        case "bio": case "sobre": case "texto": case "apresentacao": case "descricao":
-          prof.bio = value; break;
-        case "procedimentos": case "servicos": case "especialidades": case "areas": case "tratamentos":
-          prof.procedimentos = value.split("\n")
-            .map(l => l.replace(/^[-•*]\s*/, "").trim()).filter(Boolean)
-            .map(l => {
-              const m = l.match(/^(.+?)\s*[—–-]{1,2}\s*(.+)$/);
-              return m ? { nome: m[1].trim(), desc: m[2].trim() } : { nome: l, desc: "" };
-            });
-          if (!prof.procedimentos.length) prof.procedimentos = [{ nome: "", desc: "" }];
-          break;
-        case "depoimentos": case "testimonials": {
-          const lines = value.split("\n").map(l => l.trim());
-          const deps: FormProf["depoimentos"] = [];
-          let cur: { texto: string; autor: string; cargo: string } | null = null;
-          for (const line of lines) {
-            if (!line) { if (cur) { deps.push(cur); cur = null; } continue; }
-            if (/^[—–-]\s/.test(line) && cur) {
-              const clean = line.replace(/^[—–-]\s*/, "");
-              const [autor, cargo] = clean.split(/\s*[|\/]\s*/);
-              cur.autor = autor?.trim() ?? "";
-              cur.cargo = cargo?.trim() ?? "";
-              deps.push(cur); cur = null;
-            } else {
-              if (cur) deps.push(cur);
-              cur = { texto: line.replace(/^[""]|[""]$/g, "").trim(), autor: "", cargo: "" };
-            }
-          }
-          if (cur) deps.push(cur);
-          prof.depoimentos = deps;
-          break;
-        }
-        case "localizacao": case "local": case "consultorio": {
-          const lLines = value.split("\n").map(l => l.trim()).filter(Boolean);
-          for (const l of lLines) {
-            if (/^(?:R\.|Rua|Av\.|Avenida|Pça\.)/i.test(l)) prof.endereco = l;
-            else if (/,\s*\w+\s*-\s*[A-Z]{2}/i.test(l)) prof.cidade = l;
-            else if (/Seg|Sáb|\dh\s*(às|a)\s*\d/i.test(l)) prof.horarios = l;
-            else if (!prof.endereco && l.length > 8) prof.endereco = l;
-          }
-          break;
-        }
-        case "endereco": case "rua": case "address": prof.endereco = value; break;
-        case "cidade": case "city": prof.cidade = value; break;
-        case "horarios": case "horario": case "horas": prof.horarios = value; break;
-      }
-    }
-
-    return prof;
-  });
 }
 
 function profToText(p: FormProf): string {
@@ -207,7 +215,7 @@ function parseBatchFile(text: string): BatchEntry[] {
   });
 }
 
-// ── Field component ───────────────────────────────────────────────────────────
+// ── Field ─────────────────────────────────────────────────────────────────────
 
 function Field({ label, value, onChange, placeholder, textarea, span2 }: {
   label: string; value: string; onChange: (v: string) => void;
@@ -236,6 +244,7 @@ function ProfCard({ prof, index, expanded, onToggle, onRemove, onUpdate, onUpdat
   onImg: (s: "logo" | "hero" | "about", f: File | undefined) => void;
 }) {
   const imgLabels = { logo: "Logo", hero: "Foto Hero", about: "Foto Sobre" };
+  const filledCount = [prof.nome, prof.especialidade, prof.whatsapp, prof.endereco].filter(Boolean).length;
 
   return (
     <div className="bg-white border border-border rounded-2xl shadow-card overflow-hidden">
@@ -246,13 +255,18 @@ function ProfCard({ prof, index, expanded, onToggle, onRemove, onUpdate, onUpdat
           </div>
           <div className="min-w-0">
             <p className="font-sans text-sm font-medium text-dark truncate">{prof.nome || "Profissional sem nome"}</p>
-            {prof.especialidade && <p className="font-sans text-[12px] text-text-muted">{prof.especialidade}{prof.especialidade2 ? ` & ${prof.especialidade2}` : ""}</p>}
+            <p className="font-sans text-[12px] text-text-muted">
+              {prof.especialidade || <span className="text-amber-500">especialidade não detectada</span>}
+              {prof.whatsapp ? ` · ${prof.whatsapp}` : ""}
+            </p>
           </div>
         </button>
-        <div className="flex items-center gap-1 shrink-0">
-          {prof.whatsapp && <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">WA</span>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${filledCount >= 3 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+            {filledCount}/4
+          </span>
           {Object.values(prof.images).some(Boolean) && <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full">img</span>}
-          <button onClick={onRemove} className="text-text-muted hover:text-destructive transition-colors p-1 ml-1"><Trash2 className="size-4" /></button>
+          <button onClick={onRemove} className="text-text-muted hover:text-destructive transition-colors p-1"><Trash2 className="size-4" /></button>
           <button onClick={onToggle} className="text-text-muted p-1">
             {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
           </button>
@@ -261,80 +275,61 @@ function ProfCard({ prof, index, expanded, onToggle, onRemove, onUpdate, onUpdat
 
       {expanded && (
         <div className="border-t border-border/40 p-5 space-y-6">
-
-          {/* Básico */}
           <div>
             <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-primary font-medium mb-3">Informações Básicas</p>
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="Nome*" value={prof.nome} onChange={v => onUpdate("nome", v)} placeholder="Dra. Nome Sobrenome" />
               <Field label="Especialidade*" value={prof.especialidade} onChange={v => onUpdate("especialidade", v)} placeholder="Ginecologia" />
-              <Field label="Especialidade secundária" value={prof.especialidade2} onChange={v => onUpdate("especialidade2", v)} placeholder="Obstetrícia (opcional)" />
+              <Field label="Especialidade secundária" value={prof.especialidade2} onChange={v => onUpdate("especialidade2", v)} placeholder="Opcional" />
               <Field label="WhatsApp*" value={prof.whatsapp} onChange={v => onUpdate("whatsapp", v)} placeholder="(37) 99999-9999" />
               <Field label="Instagram" value={prof.instagram} onChange={v => onUpdate("instagram", v)} placeholder="@handle" />
-              <Field label="CRM / Registro" value={prof.crm} onChange={v => onUpdate("crm", v)} placeholder="CRM MG 12345 · RQE 678" />
+              <Field label="CRM / Registro" value={prof.crm} onChange={v => onUpdate("crm", v)} placeholder="CRM MG 12345" />
             </div>
           </div>
 
-          {/* Conteúdo */}
           <div>
             <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-primary font-medium mb-3">Conteúdo</p>
             <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Headline (opcional)" value={prof.headline} onChange={v => onUpdate("headline", v)} placeholder="Auto-gerada pela especialidade" />
-              <Field label="Subtítulo (opcional)" value={prof.subtitulo} onChange={v => onUpdate("subtitulo", v)} placeholder="Auto-gerado" />
-              <Field label="Bio / Sobre" value={prof.bio} onChange={v => onUpdate("bio", v)} placeholder="Apresentação da profissional — auto-gerada se vazia" textarea span2 />
+              <Field label="Headline" value={prof.headline} onChange={v => onUpdate("headline", v)} placeholder="Auto-gerada pela especialidade" />
+              <Field label="Subtítulo" value={prof.subtitulo} onChange={v => onUpdate("subtitulo", v)} placeholder="Auto-gerado" />
+              <Field label="Bio / Sobre" value={prof.bio} onChange={v => onUpdate("bio", v)} placeholder="Auto-gerada se vazia" textarea span2 />
             </div>
           </div>
 
-          {/* Procedimentos */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-primary font-medium">Procedimentos / Serviços</p>
-              <button onClick={() => onAddList("procedimentos")} className="flex items-center gap-1 text-[11px] text-primary hover:opacity-70 transition-opacity">
-                <Plus className="size-3" /> Adicionar
-              </button>
+              <button onClick={() => onAddList("procedimentos")} className="flex items-center gap-1 text-[11px] text-primary hover:opacity-70"><Plus className="size-3" /> Adicionar</button>
             </div>
             <div className="space-y-2">
               {prof.procedimentos.map((pr, i) => (
                 <div key={i} className="flex gap-2">
-                  <input value={pr.nome} onChange={e => onUpdateList("procedimentos", i, "nome", e.target.value)}
-                    placeholder="Nome do procedimento"
-                    className="flex-1 bg-muted/40 border border-border/60 rounded-lg px-3 py-2 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
-                  <input value={pr.desc} onChange={e => onUpdateList("procedimentos", i, "desc", e.target.value)}
-                    placeholder="Descrição breve"
-                    className="flex-1 bg-muted/40 border border-border/60 rounded-lg px-3 py-2 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
+                  <input value={pr.nome} onChange={e => onUpdateList("procedimentos", i, "nome", e.target.value)} placeholder="Nome" className="flex-1 bg-muted/40 border border-border/60 rounded-lg px-3 py-2 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
+                  <input value={pr.desc} onChange={e => onUpdateList("procedimentos", i, "desc", e.target.value)} placeholder="Descrição breve" className="flex-1 bg-muted/40 border border-border/60 rounded-lg px-3 py-2 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
                   <button onClick={() => onRemoveList("procedimentos", i)} className="text-text-muted hover:text-destructive p-1 shrink-0"><Trash2 className="size-3.5" /></button>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Depoimentos */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-primary font-medium">Depoimentos (opcional)</p>
-              <button onClick={() => onAddList("depoimentos")} className="flex items-center gap-1 text-[11px] text-primary hover:opacity-70 transition-opacity">
-                <Plus className="size-3" /> Adicionar
-              </button>
+              <button onClick={() => onAddList("depoimentos")} className="flex items-center gap-1 text-[11px] text-primary hover:opacity-70"><Plus className="size-3" /> Adicionar</button>
             </div>
             {prof.depoimentos.length === 0
-              ? <p className="text-xs text-text-muted font-light">Sem depoimentos — usará os padrões da especialidade.</p>
+              ? <p className="text-xs text-text-muted font-light">Sem depoimentos — serão usados os padrões da especialidade.</p>
               : (
                 <div className="space-y-3">
                   {prof.depoimentos.map((dep, i) => (
                     <div key={i} className="bg-muted/30 rounded-xl p-3 space-y-2">
                       <div className="flex gap-2">
-                        <textarea value={dep.texto} onChange={e => onUpdateList("depoimentos", i, "texto", e.target.value)}
-                          placeholder="Texto do depoimento" rows={2}
-                          className="flex-1 bg-white border border-border/60 rounded-lg px-3 py-2 text-sm font-sans text-dark focus:outline-none focus:border-primary resize-none" />
-                        <button onClick={() => onRemoveList("depoimentos", i)} className="text-text-muted hover:text-destructive p-1 shrink-0 self-start"><Trash2 className="size-3.5" /></button>
+                        <textarea value={dep.texto} onChange={e => onUpdateList("depoimentos", i, "texto", e.target.value)} placeholder="Texto do depoimento" rows={2} className="flex-1 bg-white border border-border/60 rounded-lg px-3 py-2 text-sm font-sans text-dark focus:outline-none focus:border-primary resize-none" />
+                        <button onClick={() => onRemoveList("depoimentos", i)} className="text-text-muted hover:text-destructive p-1 self-start"><Trash2 className="size-3.5" /></button>
                       </div>
                       <div className="flex gap-2">
-                        <input value={dep.autor} onChange={e => onUpdateList("depoimentos", i, "autor", e.target.value)}
-                          placeholder="Nome da paciente"
-                          className="flex-1 bg-white border border-border/60 rounded-lg px-3 py-1.5 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
-                        <input value={dep.cargo} onChange={e => onUpdateList("depoimentos", i, "cargo", e.target.value)}
-                          placeholder="Ex: Paciente há 2 anos"
-                          className="flex-1 bg-white border border-border/60 rounded-lg px-3 py-1.5 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
+                        <input value={dep.autor} onChange={e => onUpdateList("depoimentos", i, "autor", e.target.value)} placeholder="Nome da paciente" className="flex-1 bg-white border border-border/60 rounded-lg px-3 py-1.5 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
+                        <input value={dep.cargo} onChange={e => onUpdateList("depoimentos", i, "cargo", e.target.value)} placeholder="Ex: Paciente há 2 anos" className="flex-1 bg-white border border-border/60 rounded-lg px-3 py-1.5 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
                       </div>
                     </div>
                   ))}
@@ -342,9 +337,8 @@ function ProfCard({ prof, index, expanded, onToggle, onRemove, onUpdate, onUpdat
               )}
           </div>
 
-          {/* Localização */}
           <div>
-            <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-primary font-medium mb-3">Localização (opcional)</p>
+            <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-primary font-medium mb-3">Localização</p>
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="Endereço" value={prof.endereco} onChange={v => onUpdate("endereco", v)} placeholder="Rua X, 123 — Bairro" />
               <Field label="Cidade — Estado" value={prof.cidade} onChange={v => onUpdate("cidade", v)} placeholder="Centro, Cidade - MG" />
@@ -352,7 +346,6 @@ function ProfCard({ prof, index, expanded, onToggle, onRemove, onUpdate, onUpdat
             </div>
           </div>
 
-          {/* Imagens */}
           <div>
             <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-primary font-medium mb-3">Imagens</p>
             <div className="grid grid-cols-3 gap-3">
@@ -366,7 +359,7 @@ function ProfCard({ prof, index, expanded, onToggle, onRemove, onUpdate, onUpdat
                         <>
                           <img src={url} alt={sec} className="w-full h-full object-cover" />
                           <button type="button" onClick={e => { e.preventDefault(); onImg(sec, undefined); }}
-                            className="absolute top-1 right-1 size-5 rounded-full bg-dark/60 text-white flex items-center justify-center hover:bg-destructive transition-colors">
+                            className="absolute top-1 right-1 size-5 rounded-full bg-dark/60 text-white flex items-center justify-center hover:bg-destructive">
                             <X className="size-3" />
                           </button>
                         </>
@@ -377,8 +370,7 @@ function ProfCard({ prof, index, expanded, onToggle, onRemove, onUpdate, onUpdat
                         </div>
                       )}
                     </div>
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) onImg(sec, f); }} />
+                    <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onImg(sec, f); }} />
                   </label>
                 );
               })}
@@ -390,14 +382,14 @@ function ProfCard({ prof, index, expanded, onToggle, onRemove, onUpdate, onUpdat
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function BatchPage() {
   const qc = useQueryClient();
   const copyInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
-  const [batchMode, setBatchMode] = useState<"form" | "upload">("form");
+  const [batchMode, setBatchMode] = useState<"smart" | "upload">("smart");
   const [formPhase, setFormPhase] = useState<"paste" | "edit">("paste");
   const [rawInput, setRawInput] = useState("");
   const [profissionais, setProfissionais] = useState<FormProf[]>([]);
@@ -407,18 +399,21 @@ export default function BatchPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [batchPagemode, setBatchPagemode] = useState<"landing" | "multipage">("landing");
 
-  // ── Form handlers ──────────────────────────────────────────────────────────
+  // ── Smart mode handlers ────────────────────────────────────────────────────
 
-  function handleParse() {
+  function handleSmartParse() {
     if (!rawInput.trim()) { toast.error("Cole as informações primeiro."); return; }
-    const parsed = parseRawInput(rawInput);
-    const valid = parsed.filter(p => p.nome.trim());
-    if (!valid.length) { toast.error("Nenhum profissional encontrado. Use =nome= para identificar cada um."); return; }
-    setProfissionais(valid);
-    setExpandedId(valid[0]?.id ?? null);
+    const parsed = smartExtract(rawInput).filter(p => p.nome || p.whatsapp);
+    if (!parsed.length) {
+      toast.error("Não consegui identificar nenhum profissional. Certifique-se de incluir o nome (ex: Dra. Nome).");
+      return;
+    }
+    setProfissionais(parsed);
+    setExpandedId(parsed[0]?.id ?? null);
     setEntries([]);
     setFormPhase("edit");
-    toast.success(`${valid.length} profissional(is) extraído(s) com sucesso!`);
+    const detected = parsed.filter(p => p.nome).length;
+    toast.success(`${detected} profissional(is) identificado(s)! Revise e ajuste o que precisar.`);
   }
 
   function updateProf<K extends keyof FormProf>(id: string, key: K, value: FormProf[K]) {
@@ -460,10 +455,10 @@ export default function BatchPage() {
     });
     setEntries(generated);
     setExpandedEntry(null);
-    toast.success(`${generated.length} entrada(s) gerada(s)!`);
+    toast.success(`${generated.length} página(s) prontas para criar!`);
   }
 
-  // ── Upload handlers ────────────────────────────────────────────────────────
+  // ── Upload mode handlers ───────────────────────────────────────────────────
 
   function handleCopyFile(file: File) {
     const reader = new FileReader();
@@ -528,93 +523,58 @@ export default function BatchPage() {
     <div className="p-8 max-w-4xl">
       <div className="mb-8">
         <h1 className="font-serif text-3xl text-dark tracking-tight">Criação em Lote</h1>
-        <p className="font-sans text-sm text-text-muted font-light mt-1">Cole as informações, gere os cards, crie as páginas.</p>
+        <p className="font-sans text-sm text-text-muted font-light mt-1">Cole as informações dos seus leads, formate automaticamente e crie as páginas.</p>
       </div>
 
       {/* Mode tabs */}
       <div className="flex bg-muted rounded-xl p-1 mb-6 w-fit">
-        {(["form", "upload"] as const).map(mode => (
+        {(["smart", "upload"] as const).map(mode => (
           <button key={mode} onClick={() => { setBatchMode(mode); setEntries([]); setFormPhase("paste"); }}
-            className={`px-5 py-2.5 rounded-lg font-sans text-[12px] tracking-[0.15em] uppercase transition-all ${batchMode === mode ? "bg-white text-dark shadow-sm font-medium" : "text-text-muted hover:text-dark"}`}>
-            {mode === "form" ? "Cola & Gera" : "Upload .txt"}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-sans text-[12px] tracking-[0.15em] uppercase transition-all ${batchMode === mode ? "bg-white text-dark shadow-sm font-medium" : "text-text-muted hover:text-dark"}`}>
+            {mode === "smart" ? <><Sparkles className="size-3.5" /> Cola &amp; Cria</> : <><FileText className="size-3.5" /> Upload .txt</>}
           </button>
         ))}
       </div>
 
-      {/* ── COLA & GERA — fase paste ── */}
-      {batchMode === "form" && formPhase === "paste" && (
-        <div className="space-y-4 mb-6">
+      {/* ── SMART MODE — paste phase ── */}
+      {batchMode === "smart" && formPhase === "paste" && (
+        <div className="mb-6">
           <div className="bg-white border border-border rounded-2xl shadow-card overflow-hidden">
-            <div className="px-5 py-4 border-b border-border/50">
-              <p className="font-sans text-sm font-medium text-dark">Cole as informações dos profissionais</p>
-              <p className="font-sans text-xs text-text-muted font-light mt-0.5">
-                Use <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono text-[11px]">=chave=</code> para cada campo.
-                Separe múltiplos profissionais com <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono text-[11px]">===</code> em linha separada.
+            <div className="px-6 py-5 border-b border-border/40">
+              <p className="font-sans text-base font-medium text-dark">Cole as informações dos profissionais</p>
+              <p className="font-sans text-sm text-text-muted font-light mt-1">
+                Pode colar qualquer formato — nome, telefone, endereço, Instagram, especialidade.
+                Separe cada profissional com <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[12px] text-primary">===</code> em linha separada.
               </p>
             </div>
-
-            {/* Formato de referência */}
-            <details className="border-b border-border/40">
-              <summary className="font-sans text-[11px] tracking-[0.2em] uppercase text-text-muted cursor-pointer px-5 py-3 hover:text-dark hover:bg-muted/30 transition-all select-none">
-                Ver formato aceito ▾
-              </summary>
-              <div className="px-5 pb-4 pt-2">
-                <pre className="bg-muted rounded-xl p-4 font-mono text-[11px] text-text-muted leading-relaxed overflow-x-auto whitespace-pre">{`=nome= Dra. Maria Silva
-=especialidade= Ginecologia
-=especialidade2= Obstetrícia          ← opcional
-=whatsapp= (37) 99999-9999
-=instagram= @dramariasilva           ← opcional
-=crm= CRM MG 12345 · RQE 678        ← opcional
-=bio= Apresentação da profissional... ← opcional, auto-gerado se vazio
-=procedimentos=
-Consulta de rotina — Exames preventivos completos.
-Pré-natal — Acompanhamento especializado da gestação.
-Saúde Hormonal
-=localizacao=
-Rua X, 123 — Centro, Cidade - MG
-Seg a Sex — 08h às 18h
-
-===
-
-=nome= Dr. João Santos
-=especialidade= Cardiologia
-...`}</pre>
-                <p className="font-sans text-[11px] text-text-muted/60 mt-2">
-                  Campos não preenchidos são gerados automaticamente pela especialidade detectada.
-                </p>
-              </div>
-            </details>
-
             <div className="p-4">
               <textarea
                 value={rawInput}
                 onChange={e => setRawInput(e.target.value)}
-                placeholder={`=nome= Dra. Maria Silva\n=especialidade= Ginecologia\n=whatsapp= (37) 99999-9999\n=bio= Sou ginecologista...\n=procedimentos=\nConsulta de rotina — Descrição\nPré-natal — Descrição\n\n===\n\n=nome= Dr. João Santos\n=especialidade= Cardiologia\n=whatsapp= (11) 99999-9999`}
-                rows={18}
-                className="w-full bg-muted/30 border border-border/60 rounded-xl px-4 py-3 font-mono text-sm text-dark placeholder:text-text-muted/30 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 resize-y transition-all"
+                placeholder={"Dra. Ana Campos, Ginecologia\nRua Iguaçu, 75 — Centro, Londrina - PR\n43998392579\ninstagram.com/aninha\n\n===\n\nDr. João Santos — Cardiologia\n(11) 98765-4321\n@drjoaosantos\nAv. Paulista, 1000 — São Paulo - SP"}
+                rows={14}
+                className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-3 font-mono text-sm text-dark placeholder:text-text-muted/30 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 resize-y transition-all"
               />
             </div>
             <div className="px-4 pb-4">
-              <button onClick={handleParse}
-                className="w-full py-4 bg-dark text-white font-sans text-[11px] tracking-[0.3em] uppercase font-medium rounded-2xl hover:bg-dark/80 transition-colors shadow-sm">
-                Gerar Profissionais →
+              <button onClick={handleSmartParse}
+                className="w-full py-4 bg-dark text-white font-sans text-[11px] tracking-[0.3em] uppercase font-medium rounded-2xl hover:bg-dark/80 transition-colors shadow-sm flex items-center justify-center gap-2">
+                <Sparkles className="size-4" /> Formatar e Gerar Profissionais
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── COLA & GERA — fase edit ── */}
-      {batchMode === "form" && formPhase === "edit" && (
+      {/* ── SMART MODE — edit phase ── */}
+      {batchMode === "smart" && formPhase === "edit" && (
         <div className="space-y-3 mb-6">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-1">
             <button onClick={() => { setFormPhase("paste"); setEntries([]); }}
               className="flex items-center gap-1.5 text-sm text-text-muted hover:text-dark transition-colors">
-              <ChevronLeft className="size-4" /> Editar texto colado
+              <ChevronLeft className="size-4" /> Editar texto
             </button>
-            <span className="font-sans text-xs text-text-muted font-light">
-              {profissionais.length} profissional(is) • clique no card para editar
-            </span>
+            <span className="font-sans text-xs text-text-muted">{profissionais.length} profissional(is) — revise e ajuste</span>
           </div>
 
           {profissionais.map((prof, idx) => (
@@ -635,8 +595,7 @@ Seg a Sex — 08h às 18h
             />
           ))}
 
-          <button
-            onClick={() => { const p = emptyProf(); setProfissionais(prev => [...prev, p]); setExpandedId(p.id); }}
+          <button onClick={() => { const p = emptyProf(); setProfissionais(prev => [...prev, p]); setExpandedId(p.id); }}
             className="w-full py-3 border-2 border-dashed border-primary/30 rounded-2xl text-primary font-sans text-[12px] tracking-[0.2em] uppercase hover:border-primary/60 hover:bg-primary/5 transition-all flex items-center justify-center gap-2">
             <Plus className="size-4" /> Adicionar profissional
           </button>
@@ -657,16 +616,14 @@ Seg a Sex — 08h às 18h
             <p className="font-sans text-sm font-medium text-dark">Arquivo de Copy</p>
             <p className="font-sans text-xs text-text-muted font-light mt-1">.txt com separador ===</p>
             {entries.length > 0 && <p className="mt-2 text-xs font-medium text-primary">{entries.length} entrada(s)</p>}
-            <input ref={copyInputRef} type="file" accept=".txt" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleCopyFile(f); }} />
+            <input ref={copyInputRef} type="file" accept=".txt" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleCopyFile(f); }} />
           </div>
           <div onClick={() => entries.length > 0 ? imgInputRef.current?.click() : undefined}
             className={`bg-white border-2 border-dashed rounded-2xl p-8 transition-colors text-center group ${entries.length > 0 ? "border-border hover:border-primary/40 cursor-pointer" : "border-border/40 opacity-50"}`}>
             <ImagePlus className="size-8 text-primary/40 mx-auto mb-3 group-hover:text-primary/60 transition-colors" />
             <p className="font-sans text-sm font-medium text-dark">Imagens (opcional)</p>
             <p className="font-sans text-xs text-text-muted font-light mt-1">slug-secao.ext — múltiplos arquivos</p>
-            <input ref={imgInputRef} type="file" accept="image/*" multiple className="hidden"
-              onChange={e => { if (e.target.files?.length) handleImageFiles(e.target.files); }} />
+            <input ref={imgInputRef} type="file" accept="image/*" multiple className="hidden" onChange={e => { if (e.target.files?.length) handleImageFiles(e.target.files); }} />
           </div>
         </div>
       )}
@@ -675,7 +632,7 @@ Seg a Sex — 08h às 18h
       {entries.length > 0 && (
         <div className="bg-white border border-border rounded-2xl shadow-card overflow-hidden mb-6">
           <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-            <p className="font-sans text-sm font-medium text-dark">{entries.length} página(s) para criar</p>
+            <p className="font-sans text-sm font-medium text-dark">{entries.length} página(s) prontas</p>
             <div className="flex gap-4 text-xs font-sans">
               {doneCount > 0 && <span className="text-emerald-600">✓ {doneCount} criada(s)</span>}
               {errorCount > 0 && <span className="text-destructive">✗ {errorCount} erro(s)</span>}
