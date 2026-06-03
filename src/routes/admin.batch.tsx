@@ -2,10 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 import {
   FileText, ImagePlus, CheckCircle2, XCircle, Loader2,
   ChevronDown, ChevronUp, AlertTriangle, Plus, Trash2, X,
-  ChevronLeft, Sparkles, MapPin,
+  ChevronLeft, Sparkles, MapPin, Table2,
 } from "lucide-react";
 import { parsePrompt } from "@/lib/parsePrompt";
 import { mergeCopy } from "@/lib/defaults";
@@ -287,6 +288,74 @@ type MapsComplement = {
   bio: string;
 };
 
+// ── Influx CSV/XLSX parser ────────────────────────────────────────────────────
+
+type InfluxRow = Record<string, string>;
+
+// Normalize header names: "WhatsApp", "Whats App", "WHATSAPP" → "whatsapp"
+function normalizeKey(k: string): string {
+  return k.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s_-]+/g, "");
+}
+
+function findCol(row: InfluxRow, ...candidates: string[]): string {
+  const keys = Object.keys(row);
+  for (const candidate of candidates) {
+    const norm = normalizeKey(candidate);
+    const found = keys.find(k => normalizeKey(k) === norm);
+    if (found && row[found]?.trim()) return row[found].trim();
+  }
+  return "";
+}
+
+function parseInfluxFile(file: File): Promise<FormProf[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const wb = XLSX.read(data, { type: file.name.endsWith(".csv") ? "string" : "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<InfluxRow>(ws, { defval: "" });
+
+        const profs: FormProf[] = rows
+          .map((row): FormProf | null => {
+            const nome = findCol(row, "Nome", "name", "profissional");
+            if (!nome) return null;
+
+            const wa = findCol(row, "WhatsApp", "Whatsapp", "whats", "celular");
+            const tel = findCol(row, "Telefone", "telefone", "phone", "fone");
+            const whatsapp = (wa || tel).replace(/\D/g, "");
+
+            const endereco = findCol(row, "Endereço", "Endereco", "Endereço", "address", "rua", "logradouro");
+            const cidade = findCol(row, "Cidade", "city", "municipio", "município");
+            const categoria = findCol(row, "Categoria", "categoria", "especialidade", "tipo", "category");
+
+            return {
+              ...emptyProf(),
+              nome,
+              especialidade: detectSpecialty(categoria) || categoria,
+              whatsapp,
+              endereco,
+              cidade,
+            };
+          })
+          .filter((p): p is FormProf => p !== null);
+
+        resolve(profs);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error("Erro ao ler o arquivo."));
+
+    if (file.name.endsWith(".csv")) {
+      reader.readAsText(file, "utf-8");
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
+  });
+}
+
 // ── Other helpers ─────────────────────────────────────────────────────────────
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
@@ -534,7 +603,10 @@ export default function BatchPage() {
   const copyInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
-  const [batchMode, setBatchMode] = useState<"maps" | "smart" | "upload">("maps");
+  const [batchMode, setBatchMode] = useState<"import" | "maps" | "smart" | "upload">("import");
+  const importRef = useRef<HTMLInputElement>(null);
+  const [importPreview, setImportPreview] = useState<FormProf[]>([]);
+  const [importLoading, setImportLoading] = useState(false);
 
   // Maps tab state
   const [mapsInput, setMapsInput] = useState("");
@@ -608,6 +680,35 @@ export default function BatchPage() {
     setEntries(generated);
     setExpandedEntry(null);
     toast.success(`${generated.length} página(s) prontas para criar!`);
+  }
+
+  // ── Import handlers ────────────────────────────────────────────────────────
+
+  async function handleImportFile(file: File) {
+    setImportLoading(true);
+    try {
+      const profs = await parseInfluxFile(file);
+      if (!profs.length) {
+        toast.error("Nenhum lead encontrado no arquivo. Verifique se o arquivo tem a coluna 'Nome'.");
+        return;
+      }
+      setImportPreview(profs);
+      toast.success(`${profs.length} lead(s) detectado(s) — revise e importe.`);
+    } catch {
+      toast.error("Erro ao ler o arquivo. Certifique-se que é um CSV ou XLSX válido.");
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  function handleImportConfirm() {
+    if (!importPreview.length) return;
+    setProfissionais(importPreview);
+    setExpandedId(importPreview[0]?.id ?? null);
+    setEntries([]);
+    setBatchMode("smart");
+    setFormPhase("edit");
+    toast.success(`${importPreview.length} lead(s) importado(s)! Revise e gere as páginas.`);
   }
 
   // ── Maps handlers ─────────────────────────────────────────────────────────
@@ -725,7 +826,11 @@ export default function BatchPage() {
       </div>
 
       {/* Mode tabs */}
-      <div className="flex bg-muted rounded-xl p-1 mb-6 w-fit">
+      <div className="flex flex-wrap bg-muted rounded-xl p-1 mb-6 gap-0.5">
+        <button onClick={() => { setBatchMode("import"); setEntries([]); setImportPreview([]); }}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-sans text-[12px] tracking-[0.15em] uppercase transition-all ${batchMode === "import" ? "bg-white text-dark shadow-sm font-medium" : "text-text-muted hover:text-dark"}`}>
+          <Table2 className="size-3.5" /> Importar Leads
+        </button>
         <button onClick={() => { setBatchMode("maps"); setEntries([]); setMapsPhase("paste"); setMapsExtracted(null); setMapsQueueCount(0); setProfissionais([]); }}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-sans text-[12px] tracking-[0.15em] uppercase transition-all ${batchMode === "maps" ? "bg-white text-dark shadow-sm font-medium" : "text-text-muted hover:text-dark"}`}>
           <MapPin className="size-3.5" /> Google Maps
@@ -739,6 +844,115 @@ export default function BatchPage() {
           <FileText className="size-3.5" /> Upload .txt
         </button>
       </div>
+
+      {/* ── IMPORT MODE ── */}
+      {batchMode === "import" && (
+        <div className="mb-6 space-y-4">
+          {/* Upload area */}
+          {!importPreview.length && (
+            <div
+              onClick={() => importRef.current?.click()}
+              className="bg-white border-2 border-dashed border-border hover:border-primary/50 rounded-2xl p-12 cursor-pointer transition-all text-center group"
+            >
+              <input
+                ref={importRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = ""; }}
+              />
+              {importLoading ? (
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="size-10 text-primary animate-spin" />
+                  <p className="font-sans text-sm text-text-muted">Lendo arquivo...</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="size-16 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+                    <Table2 className="size-8 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-sans text-base font-medium text-dark">Arraste ou clique para importar</p>
+                    <p className="font-sans text-sm text-text-muted font-light mt-1">CSV ou XLSX exportado do Influx</p>
+                  </div>
+                  <div className="flex gap-2 mt-1">
+                    <span className="font-mono text-[11px] bg-muted text-text-muted px-2.5 py-1 rounded-lg">.csv</span>
+                    <span className="font-mono text-[11px] bg-muted text-text-muted px-2.5 py-1 rounded-lg">.xlsx</span>
+                    <span className="font-mono text-[11px] bg-muted text-text-muted px-2.5 py-1 rounded-lg">.xls</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Preview table */}
+          {importPreview.length > 0 && (
+            <div className="bg-white border border-border rounded-2xl shadow-card overflow-hidden">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                <div>
+                  <p className="font-sans text-sm font-medium text-dark">{importPreview.length} leads detectados</p>
+                  <p className="font-sans text-xs text-text-muted font-light mt-0.5">
+                    Campos em amber serão completados automaticamente pela especialidade
+                  </p>
+                </div>
+                <button onClick={() => { setImportPreview([]); }} className="text-[11px] text-text-muted hover:text-dark transition-colors">
+                  Trocar arquivo
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs font-sans">
+                  <thead className="bg-muted/50 border-b border-border">
+                    <tr>
+                      {["#", "Nome", "Especialidade", "WhatsApp", "Endereço", "Cidade"].map(h => (
+                        <th key={h} className="px-4 py-3 text-left font-medium text-text-muted tracking-[0.1em] uppercase text-[10px]">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {importPreview.slice(0, 8).map((p, i) => (
+                      <tr key={p.id} className="hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3 text-text-muted">{i + 1}</td>
+                        <td className="px-4 py-3 text-dark font-medium max-w-[180px] truncate">{p.nome || <span className="text-destructive">—</span>}</td>
+                        <td className="px-4 py-3">
+                          {p.especialidade
+                            ? <span className="text-dark">{p.especialidade}</span>
+                            : <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded text-[10px]">auto</span>}
+                        </td>
+                        <td className="px-4 py-3 text-text-muted font-mono">{p.whatsapp || <span className="text-amber-600">—</span>}</td>
+                        <td className="px-4 py-3 text-text-muted max-w-[160px] truncate">{p.endereco || "—"}</td>
+                        <td className="px-4 py-3 text-text-muted">{p.cidade || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {importPreview.length > 8 && (
+                  <p className="px-4 py-3 text-xs text-text-muted font-light border-t border-border/60">
+                    + {importPreview.length - 8} lead(s) não mostrado(s) na prévia
+                  </p>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-border bg-muted/20 flex gap-3">
+                <button
+                  onClick={() => importRef.current?.click()}
+                  className="flex-1 py-3 border border-border rounded-xl font-sans text-[11px] tracking-[0.2em] uppercase text-text-muted hover:text-dark hover:border-dark/30 transition-all"
+                >
+                  Trocar arquivo
+                </button>
+                <button
+                  onClick={handleImportConfirm}
+                  className="flex-[2] py-3 bg-dark text-white font-sans text-[11px] tracking-[0.25em] uppercase font-medium rounded-xl hover:bg-dark/80 transition-all"
+                >
+                  Importar {importPreview.length} leads → revisar e criar
+                </button>
+              </div>
+              <input ref={importRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── MAPS MODE — paste ── */}
       {batchMode === "maps" && mapsPhase === "paste" && (
