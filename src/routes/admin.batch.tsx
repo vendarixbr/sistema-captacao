@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   FileText, ImagePlus, CheckCircle2, XCircle, Loader2,
   ChevronDown, ChevronUp, AlertTriangle, Plus, Trash2, X,
-  ChevronLeft, Sparkles,
+  ChevronLeft, Sparkles, MapPin,
 } from "lucide-react";
 import { parsePrompt } from "@/lib/parsePrompt";
 import { mergeCopy } from "@/lib/defaults";
@@ -141,6 +141,151 @@ function smartExtract(rawText: string): FormProf[] {
     return prof;
   });
 }
+
+// ── Google Maps parser ────────────────────────────────────────────────────────
+
+type MapsExtracted = {
+  nome: string;
+  especialidade: string;
+  whatsapp: string;
+  endereco: string;
+  cidade: string;
+  horarios: string;
+  site: string;
+};
+
+// Lines that are clearly Google Maps UI noise — skip them
+const MAPS_NOISE = [
+  /^Google Maps$/i, /^Avaliações?$/i, /^Salvar$/i, /^Compartilhar$/i,
+  /^Rotas?$/i, /^Ligar$/i, /^Mais$/i, /^Envia para/i, /^Adicionar/i,
+  /^Sugerir/i, /^Ver (todos|mais|fotos)/i, /^Cardápio$/i, /^Fotos?$/i,
+  /^R\$(\s*·)?$/, /^\d+\s*\(/, /^★/, /^https?:\/\//, /^\d+\s*avaliações/i,
+  /^Aberto agora/i, /^Fechado/i, /^Abre (às|em)/i, /^Fecha às/i,
+];
+
+function parseGoogleMapsInput(raw: string): MapsExtracted {
+  const result: MapsExtracted = { nome: "", especialidade: "", whatsapp: "", endereco: "", cidade: "", horarios: "", site: "" };
+  const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
+  const clean = lines.filter(l => !MAPS_NOISE.some(re => re.test(l)));
+
+  // ── Name ──────────────────────────────────────────────────────────────────
+  // Google Maps format: "Dra. Nome - Especialidade" or "Clínica Nome"
+  for (let i = 0; i < Math.min(5, clean.length); i++) {
+    const line = clean[i];
+    if (/\d{4,}|Endereço|Telefone|Horário|Site:/i.test(line)) break;
+
+    // "Name — Category" split
+    const dash = line.match(/^(.+?)\s*[-–—]+\s*(.+)$/);
+    if (dash) {
+      const [, left, right] = dash;
+      if (left.length >= 3 && left.length <= 60 && !/^\d/.test(left)) {
+        result.nome = left.trim();
+        result.especialidade = detectSpecialty(right) || right.trim().split(/[,·]/)[0].trim();
+        break;
+      }
+    }
+    // Plain name line
+    if (!result.nome && /^[A-ZÀÁÂÃÉÊÍÓÔÕÚÜÇ]/.test(line) && line.length < 70 && !/^\d/.test(line)) {
+      result.nome = line;
+    }
+  }
+
+  // ── Specialty from category lines (if not from name) ──────────────────────
+  if (!result.especialidade) {
+    for (const line of clean.slice(0, 8)) {
+      const s = detectSpecialty(line);
+      if (s) { result.especialidade = s; break; }
+    }
+  }
+
+  // ── Phone ─────────────────────────────────────────────────────────────────
+  for (const line of lines) {
+    const stripped = line.replace(/^(?:Número de telefone|Telefone|Tel|Fone|📞)[:\s]*/i, "").trim();
+    const m = stripped.match(/(?:\+?55\s?)?(?:\(?\d{2}\)?[\s-]?)?\d{4,5}[\s-]?\d{4}/);
+    if (m) {
+      const digits = m[0].replace(/\D/g, "");
+      if (digits.length >= 10 && digits.length <= 13) { result.whatsapp = digits; break; }
+    }
+  }
+
+  // ── Address ───────────────────────────────────────────────────────────────
+  for (const line of lines) {
+    const stripped = line.replace(/^(?:Endereço|Localização|📍)[:\s]*/i, "").trim();
+    if (/^(?:Rua|R\.|Av\.|Avenida|Al\.|Alameda|Pça\.|Praça|Estrada|Rod\.|Trav\.)/i.test(stripped)) {
+      // Separate street from city/state
+      // Typical: "Rua X, 123 - Bairro, Cidade - UF, CEP"
+      const m = stripped.match(/^(.+?),\s*([^,]+\s*-\s*[A-Z]{2}(?:,\s*\d{5}-?\d{3})?)$/);
+      if (m) {
+        result.endereco = m[1].trim();
+        result.cidade = m[2].trim().replace(/,\s*\d{5}-?\d{3}$/, "").trim();
+      } else {
+        // Try to find city in the remaining text
+        const stateMatch = stripped.match(/(.+?),\s*([\wÀ-ÿ\s]+-\s*[A-Z]{2})/);
+        if (stateMatch) {
+          result.endereco = stateMatch[1].trim();
+          result.cidade = stateMatch[2].trim();
+        } else {
+          result.endereco = stripped;
+        }
+      }
+      break;
+    }
+    if (/^(?:Endereço|Localização)[:\s]/i.test(line) && !result.endereco) {
+      result.endereco = stripped;
+    }
+  }
+
+  // ── City fallback ─────────────────────────────────────────────────────────
+  if (!result.cidade) {
+    const full = raw;
+    const m = full.match(/([\wÀ-ÿ][\wÀ-ÿ\s]+?)\s*-\s*([A-Z]{2})(?:[,\s]|$)/);
+    if (m && m[1].trim() !== result.endereco) {
+      result.cidade = `${m[1].trim()} - ${m[2]}`;
+    }
+  }
+
+  // ── Hours ─────────────────────────────────────────────────────────────────
+  for (const line of lines) {
+    const stripped = line.replace(/^(?:Horário[s]?|Funciona)[:\s]*/i, "").trim();
+    if (/^(?:Horário|Funciona)/i.test(line) || /(?:segunda|seg\.-sex|seg\s+a\s+sex|seg\.|dom\.)/i.test(line)) {
+      if (stripped.length > 5 && stripped.length < 100) { result.horarios = stripped; break; }
+    }
+  }
+
+  // ── Site ──────────────────────────────────────────────────────────────────
+  for (const line of lines) {
+    if (/^(?:Site|Website)[:\s]+/i.test(line)) {
+      result.site = line.replace(/^(?:Site|Website)[:\s]*/i, "").trim();
+      break;
+    }
+    if (/^www\.|\.com\.br|\.med\.br/i.test(line)) { result.site = line; break; }
+  }
+
+  return result;
+}
+
+function mapsExtractedToProf(extracted: MapsExtracted, complement: MapsComplement): FormProf {
+  const prof = emptyProf();
+  prof.nome = extracted.nome;
+  prof.especialidade = complement.especialidade || extracted.especialidade;
+  prof.especialidade2 = complement.especialidade2;
+  prof.whatsapp = extracted.whatsapp;
+  prof.instagram = complement.instagram ? (complement.instagram.startsWith("@") ? complement.instagram : "@" + complement.instagram) : "";
+  prof.crm = complement.crm;
+  prof.bio = complement.bio;
+  prof.endereco = extracted.endereco;
+  prof.cidade = extracted.cidade;
+  prof.horarios = extracted.horarios;
+  return prof;
+}
+
+type MapsComplement = {
+  especialidade: string;
+  especialidade2: string;
+  instagram: string;
+  crm: string;
+  bio: string;
+};
 
 // ── Other helpers ─────────────────────────────────────────────────────────────
 
@@ -389,7 +534,14 @@ export default function BatchPage() {
   const copyInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
-  const [batchMode, setBatchMode] = useState<"smart" | "upload">("smart");
+  const [batchMode, setBatchMode] = useState<"maps" | "smart" | "upload">("maps");
+
+  // Maps tab state
+  const [mapsInput, setMapsInput] = useState("");
+  const [mapsPhase, setMapsPhase] = useState<"paste" | "review">("paste");
+  const [mapsExtracted, setMapsExtracted] = useState<MapsExtracted | null>(null);
+  const [mapsComplement, setMapsComplement] = useState<MapsComplement>({ especialidade: "", especialidade2: "", instagram: "", crm: "", bio: "" });
+  const [mapsQueueCount, setMapsQueueCount] = useState(0);
   const [formPhase, setFormPhase] = useState<"paste" | "edit">("paste");
   const [rawInput, setRawInput] = useState("");
   const [profissionais, setProfissionais] = useState<FormProf[]>([]);
@@ -456,6 +608,45 @@ export default function BatchPage() {
     setEntries(generated);
     setExpandedEntry(null);
     toast.success(`${generated.length} página(s) prontas para criar!`);
+  }
+
+  // ── Maps handlers ─────────────────────────────────────────────────────────
+
+  function handleMapsExtract() {
+    if (!mapsInput.trim()) { toast.error("Cole o conteúdo do Google Maps primeiro."); return; }
+    const extracted = parseGoogleMapsInput(mapsInput);
+    if (!extracted.nome && !extracted.whatsapp && !extracted.endereco) {
+      toast.error("Não consegui identificar o profissional. Copie mais texto da listagem do Maps e tente novamente.");
+      return;
+    }
+    setMapsExtracted(extracted);
+    setMapsComplement({ especialidade: extracted.especialidade ? "" : "", especialidade2: "", instagram: "", crm: "", bio: "" });
+    setMapsPhase("review");
+  }
+
+  function handleMapsAddToQueue() {
+    if (!mapsExtracted) return;
+    const prof = mapsExtractedToProf(mapsExtracted, mapsComplement);
+    const newCount = mapsQueueCount + 1;
+    setProfissionais(prev => {
+      const existing = prev.filter(p => p.nome || p.whatsapp);
+      return [...existing, prof];
+    });
+    setMapsQueueCount(newCount);
+    setMapsInput("");
+    setMapsExtracted(null);
+    setMapsPhase("paste");
+    toast.success(`Profissional ${newCount} adicionado à fila!`);
+  }
+
+  function handleMapsGoToEdit() {
+    if (profissionais.filter(p => p.nome || p.whatsapp).length === 0) {
+      toast.error("Adicione pelo menos um profissional à fila primeiro.");
+      return;
+    }
+    setBatchMode("smart");
+    setFormPhase("edit");
+    setExpandedId(profissionais[0]?.id ?? null);
   }
 
   // ── Upload mode handlers ───────────────────────────────────────────────────
@@ -535,13 +726,204 @@ export default function BatchPage() {
 
       {/* Mode tabs */}
       <div className="flex bg-muted rounded-xl p-1 mb-6 w-fit">
-        {(["smart", "upload"] as const).map(mode => (
-          <button key={mode} onClick={() => { setBatchMode(mode); setEntries([]); setFormPhase("paste"); }}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-sans text-[12px] tracking-[0.15em] uppercase transition-all ${batchMode === mode ? "bg-white text-dark shadow-sm font-medium" : "text-text-muted hover:text-dark"}`}>
-            {mode === "smart" ? <><Sparkles className="size-3.5" /> Cola &amp; Cria</> : <><FileText className="size-3.5" /> Upload .txt</>}
-          </button>
-        ))}
+        <button onClick={() => { setBatchMode("maps"); setEntries([]); setMapsPhase("paste"); setMapsExtracted(null); setMapsQueueCount(0); setProfissionais([]); }}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-sans text-[12px] tracking-[0.15em] uppercase transition-all ${batchMode === "maps" ? "bg-white text-dark shadow-sm font-medium" : "text-text-muted hover:text-dark"}`}>
+          <MapPin className="size-3.5" /> Google Maps
+        </button>
+        <button onClick={() => { setBatchMode("smart"); setEntries([]); setFormPhase("paste"); }}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-sans text-[12px] tracking-[0.15em] uppercase transition-all ${batchMode === "smart" ? "bg-white text-dark shadow-sm font-medium" : "text-text-muted hover:text-dark"}`}>
+          <Sparkles className="size-3.5" /> Cola &amp; Cria
+        </button>
+        <button onClick={() => { setBatchMode("upload"); setEntries([]); }}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-sans text-[12px] tracking-[0.15em] uppercase transition-all ${batchMode === "upload" ? "bg-white text-dark shadow-sm font-medium" : "text-text-muted hover:text-dark"}`}>
+          <FileText className="size-3.5" /> Upload .txt
+        </button>
       </div>
+
+      {/* ── MAPS MODE — paste ── */}
+      {batchMode === "maps" && mapsPhase === "paste" && (
+        <div className="mb-6 space-y-4">
+          {mapsQueueCount > 0 && (
+            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-3.5">
+              <div className="flex items-center gap-2 text-emerald-700">
+                <CheckCircle2 className="size-4" />
+                <span className="font-sans text-sm font-medium">{mapsQueueCount} profissional(is) na fila</span>
+              </div>
+              <button onClick={handleMapsGoToEdit}
+                className="font-sans text-[11px] tracking-[0.2em] uppercase text-emerald-700 border border-emerald-400 px-4 py-1.5 rounded-lg hover:bg-emerald-100 transition-colors">
+                Revisar e criar →
+              </button>
+            </div>
+          )}
+          <div className="bg-white border border-border rounded-2xl shadow-card overflow-hidden">
+            <div className="px-6 py-5 border-b border-border/40">
+              <p className="font-sans text-base font-medium text-dark">Cole o conteúdo do Google Maps</p>
+              <p className="font-sans text-sm text-text-muted font-light mt-1">
+                Abra o perfil do profissional no Google Maps, selecione todo o texto visível e cole aqui. O sistema extrai nome, telefone, endereço, horários e especialidade automaticamente.
+              </p>
+            </div>
+            <div className="px-5 py-4 bg-muted/30 border-b border-border/40">
+              <p className="font-sans text-[11px] tracking-[0.15em] uppercase text-text-muted font-medium mb-2">Como copiar do Google Maps</p>
+              <ol className="font-sans text-xs text-text-muted font-light space-y-1 list-decimal list-inside">
+                <li>Abra o Google Maps e pesquise o profissional</li>
+                <li>Clique no card/perfil do consultório</li>
+                <li>Selecione todo o texto do painel lateral (Ctrl+A ou clique e arraste)</li>
+                <li>Cole aqui embaixo</li>
+              </ol>
+            </div>
+            <div className="p-4">
+              <textarea
+                value={mapsInput}
+                onChange={e => setMapsInput(e.target.value)}
+                placeholder={"Dra. Ana Campos - Ginecologista\nGinecologista\n4.8 ★ (89 avaliações)\nAberto · Fecha às 18:00\nEndereço: Rua Iguaçu, 75 - Centro, Londrina - PR, 86010-150\nTelefone: (43) 99839-2579\nSite: www.dra-ana.com.br\nHorário: segunda a sexta, das 8h às 18h"}
+                rows={12}
+                className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-3 font-mono text-sm text-dark placeholder:text-text-muted/30 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 resize-y transition-all"
+              />
+            </div>
+            <div className="px-4 pb-4">
+              <button onClick={handleMapsExtract}
+                className="w-full py-4 bg-dark text-white font-sans text-[11px] tracking-[0.3em] uppercase font-medium rounded-2xl hover:bg-dark/80 transition-colors shadow-sm flex items-center justify-center gap-2">
+                <MapPin className="size-4" /> Extrair Informações →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MAPS MODE — review ── */}
+      {batchMode === "maps" && mapsPhase === "review" && mapsExtracted && (() => {
+        const detected: { label: string; value: string }[] = [];
+        const missing: string[] = [];
+
+        if (mapsExtracted.nome) detected.push({ label: "Nome", value: mapsExtracted.nome });
+        else missing.push("Nome");
+
+        if (mapsExtracted.especialidade) detected.push({ label: "Especialidade", value: mapsExtracted.especialidade });
+        else missing.push("Especialidade");
+
+        if (mapsExtracted.whatsapp) detected.push({ label: "Telefone", value: mapsExtracted.whatsapp });
+        else missing.push("Telefone");
+
+        if (mapsExtracted.endereco) detected.push({ label: "Endereço", value: mapsExtracted.endereco });
+        else missing.push("Endereço");
+
+        if (mapsExtracted.cidade) detected.push({ label: "Cidade", value: mapsExtracted.cidade });
+
+        if (mapsExtracted.horarios) detected.push({ label: "Horários", value: mapsExtracted.horarios });
+
+        if (mapsExtracted.site) detected.push({ label: "Site", value: mapsExtracted.site });
+
+        const needsEspecialidade = !mapsExtracted.especialidade;
+
+        return (
+          <div className="mb-6 space-y-4">
+            <button onClick={() => setMapsPhase("paste")} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-dark transition-colors">
+              <ChevronLeft className="size-4" /> Extrair outro
+            </button>
+
+            {/* Extracted data summary */}
+            <div className="bg-white border border-border rounded-2xl shadow-card overflow-hidden">
+              <div className="px-5 py-4 border-b border-border/40 flex items-center justify-between">
+                <p className="font-sans text-sm font-medium text-dark">Dados extraídos do Google Maps</p>
+                <span className="text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full font-medium">
+                  {detected.length} campo(s) detectado(s)
+                </span>
+              </div>
+
+              {/* Detected fields */}
+              <div className="px-5 py-4 border-b border-border/40">
+                <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-text-muted font-medium mb-3">Detectado com sucesso</p>
+                <div className="space-y-2">
+                  {detected.map(d => (
+                    <div key={d.label} className="flex items-start gap-3">
+                      <CheckCircle2 className="size-4 text-emerald-500 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <span className="font-sans text-[11px] tracking-[0.1em] uppercase text-text-muted">{d.label}: </span>
+                        <span className="font-sans text-sm text-dark">{d.value}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {missing.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {missing.map(m => (
+                      <span key={m} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <AlertTriangle className="size-2.5" /> {m} não detectado
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick-fill for fields not on Maps */}
+              <div className="px-5 py-4">
+                <p className="font-sans text-[10px] tracking-[0.2em] uppercase text-primary font-medium mb-4">
+                  Complete os dados que o Google Maps não tem
+                </p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {needsEspecialidade && (
+                    <div className="sm:col-span-2">
+                      <label className="font-sans text-[11px] tracking-[0.15em] uppercase text-destructive block mb-1.5">Especialidade* (obrigatório)</label>
+                      <input value={mapsComplement.especialidade} onChange={e => setMapsComplement(p => ({ ...p, especialidade: e.target.value }))}
+                        placeholder="Ginecologia, Cardiologia, Dermatologia..."
+                        className="w-full bg-muted/40 border border-destructive/40 rounded-xl px-3.5 py-2.5 text-sm font-sans text-dark focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                    </div>
+                  )}
+                  <div>
+                    <label className="font-sans text-[11px] tracking-[0.15em] uppercase text-text-muted block mb-1.5">Especialidade 2 (opcional)</label>
+                    <input value={mapsComplement.especialidade2} onChange={e => setMapsComplement(p => ({ ...p, especialidade2: e.target.value }))}
+                      placeholder="Ex: Obstetrícia"
+                      className="w-full bg-muted/40 border border-border/60 rounded-xl px-3.5 py-2.5 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
+                  </div>
+                  <div>
+                    <label className="font-sans text-[11px] tracking-[0.15em] uppercase text-text-muted block mb-1.5">Instagram</label>
+                    <input value={mapsComplement.instagram} onChange={e => setMapsComplement(p => ({ ...p, instagram: e.target.value }))}
+                      placeholder="@handle (sem @, adiciona automático)"
+                      className="w-full bg-muted/40 border border-border/60 rounded-xl px-3.5 py-2.5 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
+                  </div>
+                  <div>
+                    <label className="font-sans text-[11px] tracking-[0.15em] uppercase text-text-muted block mb-1.5">CRM / Registro</label>
+                    <input value={mapsComplement.crm} onChange={e => setMapsComplement(p => ({ ...p, crm: e.target.value }))}
+                      placeholder="CRM MG 12345 · RQE 678"
+                      className="w-full bg-muted/40 border border-border/60 rounded-xl px-3.5 py-2.5 text-sm font-sans text-dark focus:outline-none focus:border-primary" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="font-sans text-[11px] tracking-[0.15em] uppercase text-text-muted block mb-1.5">Bio / Sobre (opcional — auto-gerada se vazia)</label>
+                    <textarea value={mapsComplement.bio} onChange={e => setMapsComplement(p => ({ ...p, bio: e.target.value }))}
+                      placeholder="Apresentação da profissional..."
+                      rows={2}
+                      className="w-full bg-muted/40 border border-border/60 rounded-xl px-3.5 py-2.5 text-sm font-sans text-dark focus:outline-none focus:border-primary resize-none" />
+                  </div>
+                </div>
+
+                <p className="font-sans text-[11px] text-text-muted font-light mt-4">
+                  Procedimentos, depoimentos e imagens podem ser adicionados no próximo passo.
+                </p>
+              </div>
+
+              <div className="px-5 pb-5 grid sm:grid-cols-2 gap-3">
+                <button onClick={() => setMapsPhase("paste")}
+                  className="py-3 border border-border rounded-xl font-sans text-[11px] tracking-[0.2em] uppercase text-text-muted hover:text-dark hover:border-dark/30 transition-all">
+                  ← Extrair outro lead
+                </button>
+                <button
+                  onClick={handleMapsAddToQueue}
+                  disabled={needsEspecialidade && !mapsComplement.especialidade.trim()}
+                  className="py-3 bg-dark text-white font-sans text-[11px] tracking-[0.2em] uppercase font-medium rounded-xl hover:bg-dark/80 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                  Adicionar à fila {mapsQueueCount > 0 ? `(${mapsQueueCount + 1}º)` : ""}
+                </button>
+              </div>
+            </div>
+
+            {mapsQueueCount > 0 && (
+              <button onClick={handleMapsGoToEdit}
+                className="w-full py-4 bg-dark text-white font-sans text-[11px] tracking-[0.3em] uppercase font-medium rounded-2xl hover:bg-dark/80 transition-colors shadow-sm">
+                Revisar {mapsQueueCount} profissional(is) e criar páginas →
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── SMART MODE — paste phase ── */}
       {batchMode === "smart" && formPhase === "paste" && (
