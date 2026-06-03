@@ -175,10 +175,23 @@ export function LandingForm({ page, mode }: LandingFormProps) {
         pagemode,
       };
 
+      const tryWithFallback = async (fn: (p: typeof payload) => Promise<LandingPage>) => {
+        try {
+          return await fn(payload);
+        } catch (e) {
+          if ((e as { message?: string }).message?.includes("pagemode")) {
+            const { pagemode: _omit, ...payloadWithout } = payload;
+            void _omit;
+            return fn(payloadWithout as typeof payload);
+          }
+          throw e;
+        }
+      };
+
       if (mode === "edit" && page) {
-        return updateLandingPage(page.id, payload);
+        return tryWithFallback(p => updateLandingPage(page.id, p));
       } else {
-        return createLandingPage(payload);
+        return tryWithFallback(p => createLandingPage(p));
       }
     },
     onSuccess: (result) => {
