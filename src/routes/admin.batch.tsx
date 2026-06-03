@@ -498,20 +498,12 @@ export default function BatchPage() {
       const entry = entries[i];
       setEntries(prev => prev.map((e, j) => j === i ? { ...e, status: "creating" } : e));
       try {
-        const mergedCopy = mergeCopy(entry.copy);
+        const mergedCopy = { ...mergeCopy(entry.copy), pagemode: batchPagemode };
         const imageUrls: Record<string, string> = {};
         for (const [sec, file] of Object.entries(entry.images)) {
           imageUrls[sec] = await uploadLandingImage(entry.slug, sec as "logo" | "hero" | "about", file);
         }
-        try {
-          await createLandingPage({ slug: entry.slug, published: true, copy: mergedCopy, images: imageUrls, theme: "rose-gold", pagemode: batchPagemode });
-        } catch (e) {
-          const msg = (e as { message?: string }).message ?? "";
-          if (msg.includes("pagemode")) {
-            // coluna ainda não existe no schema cache — cria sem ela
-            await createLandingPage({ slug: entry.slug, published: true, copy: mergedCopy, images: imageUrls, theme: "rose-gold" });
-          } else throw e;
-        }
+        await createLandingPage({ slug: entry.slug, published: true, copy: mergedCopy, images: imageUrls, theme: "rose-gold" });
         setEntries(prev => prev.map((e, j) => j === i ? { ...e, status: "done" } : e));
       } catch (err) {
         setEntries(prev => prev.map((e, j) => j === i ? { ...e, status: "error", error: (err as Error).message } : e));

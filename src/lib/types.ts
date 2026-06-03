@@ -76,6 +76,7 @@ export type LandingCopy = {
   footer: {
     tagline: string;
   };
+  pagemode?: "landing" | "multipage";
 };
 
 export type LandingPage = {
@@ -87,5 +88,4 @@ export type LandingPage = {
   copy: LandingCopy;
   images: LandingImages;
   theme?: string;
-  pagemode?: "landing" | "multipage";
 };
