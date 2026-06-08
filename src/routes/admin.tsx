@@ -1,11 +1,28 @@
-import { createFileRoute, Outlet, Link, useRouterState } from "@tanstack/react-router";
-import { LayoutGrid, Plus, Sparkles, Layers } from "lucide-react";
+import { createFileRoute, Outlet, Link, useRouterState, redirect, useNavigate } from "@tanstack/react-router";
+import { LayoutGrid, Plus, Sparkles, Layers, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
-export const Route = createFileRoute("/admin")({ component: AdminLayout });
+export const Route = createFileRoute("/admin")({
+  beforeLoad: async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
+      throw redirect({ to: "/login" });
+    }
+  },
+  component: AdminLayout,
+});
 
 function AdminLayout() {
   const { location } = useRouterState();
+  const navigate = useNavigate();
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    navigate({ to: "/login" });
+  }
   const isNew = location.pathname === "/admin/new";
   const isList = location.pathname === "/admin/" || location.pathname === "/admin";
   const isBatch = location.pathname === "/admin/batch";
@@ -67,12 +84,19 @@ function AdminLayout() {
         </nav>
 
         {/* Footer */}
-        <div className="px-6 py-5 border-t border-white/8">
-          <div className="flex items-center gap-2">
+        <div className="px-4 py-5 border-t border-white/8 space-y-3">
+          <div className="flex items-center gap-2 px-2">
             <div className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <p className="font-sans text-[11px] text-white/30 font-light">Sistema ativo</p>
           </div>
-          <p className="font-sans text-[10px] text-white/20 font-light mt-1">© {new Date().getFullYear()} beinflux</p>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2.5 w-full px-3 py-2 rounded-xl text-[12px] font-sans text-white/40 hover:bg-white/6 hover:text-white/70 transition-all duration-200"
+          >
+            <LogOut size={14} />
+            Sair
+          </button>
+          <p className="font-sans text-[10px] text-white/20 font-light px-2">© {new Date().getFullYear()} beinflux</p>
         </div>
       </aside>
 

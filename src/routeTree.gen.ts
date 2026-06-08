@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as SlugRouteImport } from './routes/$slug'
 import { Route as IndexRouteImport } from './routes/index'
@@ -17,6 +18,11 @@ import { Route as AdminNewRouteImport } from './routes/admin.new'
 import { Route as AdminBatchRouteImport } from './routes/admin.batch'
 import { Route as AdminIdRouteImport } from './routes/admin.$id'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
   '/admin': typeof AdminRouteWithChildren
+  '/login': typeof LoginRoute
   '/admin/$id': typeof AdminIdRoute
   '/admin/batch': typeof AdminBatchRoute
   '/admin/new': typeof AdminNewRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
+  '/login': typeof LoginRoute
   '/admin/$id': typeof AdminIdRoute
   '/admin/batch': typeof AdminBatchRoute
   '/admin/new': typeof AdminNewRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
   '/admin': typeof AdminRouteWithChildren
+  '/login': typeof LoginRoute
   '/admin/$id': typeof AdminIdRoute
   '/admin/batch': typeof AdminBatchRoute
   '/admin/new': typeof AdminNewRoute
@@ -86,17 +95,26 @@ export interface FileRouteTypes {
     | '/'
     | '/$slug'
     | '/admin'
+    | '/login'
     | '/admin/$id'
     | '/admin/batch'
     | '/admin/new'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$slug' | '/admin/$id' | '/admin/batch' | '/admin/new' | '/admin'
+  to:
+    | '/'
+    | '/$slug'
+    | '/login'
+    | '/admin/$id'
+    | '/admin/batch'
+    | '/admin/new'
+    | '/admin'
   id:
     | '__root__'
     | '/'
     | '/$slug'
     | '/admin'
+    | '/login'
     | '/admin/$id'
     | '/admin/batch'
     | '/admin/new'
@@ -107,10 +125,18 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SlugRoute: typeof SlugRoute
   AdminRoute: typeof AdminRouteWithChildren
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -183,6 +209,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SlugRoute: SlugRoute,
   AdminRoute: AdminRouteWithChildren,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
